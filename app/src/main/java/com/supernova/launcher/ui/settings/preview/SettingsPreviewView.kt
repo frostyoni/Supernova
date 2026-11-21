@@ -708,11 +708,17 @@ class SettingsPreviewView @JvmOverloads constructor(
         resolved: com.supernova.launcher.ui.theme.ResolvedSurface
     ): Drawable? {
         if (prefs.dockBgStyle == DockBgStyle.LIQUID) {
+            val night = (context.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
             return com.supernova.launcher.ui.LiquidGlassDrawable(
                 context,
-                com.supernova.launcher.data.IconGlass.CLEAR,
+                if (night) com.supernova.launcher.data.IconGlass.SMOKED
+                else com.supernova.launcher.data.IconGlass.FROSTED,
                 dp(prefs.dockBgRadius).toFloat()
-            ).also { it.alpha = android.graphics.Color.alpha(resolved.surface) }
+            ).also {
+                it.alpha = maxOf(android.graphics.Color.alpha(resolved.surface), (0.55f * 255).toInt())
+            }
         }
         val radius = when (prefs.dockBgStyle) {
             DockBgStyle.NONE -> return null
