@@ -6,11 +6,10 @@ import android.view.View
 import android.view.ViewGroup
 
 // A fixed-column grid of equal-width cells, wrapping its rows' heights (or
-// a child's own height, when its layout params set one). The
-// search window's app tiles use it in place of a nested RecyclerView: a
-// query yields a handful of tiles and the zero state a few dozen, so there
-// is nothing to recycle and everything to gain from a layout that knows its
-// width at measure time.
+// a child's own height, when its layout params set one). The search window's
+// app tiles use it in place of a nested RecyclerView: a query yields a
+// handful of tiles, so there is nothing to recycle and everything to gain
+// from a layout that knows its width at measure time.
 class SearchGridView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null

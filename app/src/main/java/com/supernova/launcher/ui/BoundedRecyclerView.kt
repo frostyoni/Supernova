@@ -6,9 +6,10 @@ import android.view.View
 import androidx.recyclerview.widget.RecyclerView
 
 // RecyclerView with a runtime height cap: content-sized until the cap, then it
-// scrolls. RecyclerView has no maxHeight of its own, and sizing the folder
-// grid from an estimated row height left an empty band under short grids.
-class FolderGridView @JvmOverloads constructor(
+// scrolls. RecyclerView has no maxHeight of its own, and sizing a grid from an
+// estimated row height left an empty band under short grids. The folder popup
+// and the floating search window both size a card this way.
+class BoundedRecyclerView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
