@@ -1023,6 +1023,10 @@ class LauncherActivity :
         // the lifted icon comes back.
         launchPrelude.clear()
         if (::drag.isInitialized) drag.cancel()
+        // A page drag owns the pager's alpha and its own overlay; stopping
+        // without a cancel left the home page invisible until Back or a
+        // restart. The touch stream is not guaranteed to end first.
+        if (::pageDrag.isInitialized) pageDrag.cancel()
         if (!viewModel.state.value.prefs.dockRememberPosition) showMainDockPage(animate = false)
         widgets.stopListening()
         runCatching { unregisterReceiver(dateChangeReceiver) }
@@ -5165,6 +5169,10 @@ class LauncherActivity :
                     viewModel.movePage(from, to)
                     lifecycleScope.launch {
                         withTimeoutOrNull(FOLDER_SAVE_WAIT_MS) { viewModel.state.first { it.model !== before } }
+                        // Cancelled while the model was saving (Back, Home,
+                        // leaving edit mode): the overlay is gone and the page
+                        // it settled to is no longer wanted.
+                        if (!pageDrag.isActive) return@launch
                         binding.workspacePager.setCurrentItem(workspaceAdapter.centerPosition(to), false)
                         editMode.onPageChanged()
                         // The moved pages rebind on the next layout pass.
