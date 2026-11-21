@@ -76,7 +76,9 @@ import com.supernova.launcher.ui.theme.Styles
 import com.supernova.launcher.ui.theme.SurfaceId
 import com.supernova.launcher.ui.theme.ThemeEngine
 import com.supernova.launcher.widget.SupernovaWidgetHost
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
@@ -1801,9 +1803,12 @@ class SettingsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             runLogged("share backup") {
                 val payload = viewModel.exportBackup()
-                val dir = java.io.File(cacheDir, "share").apply { mkdirs() }
+                val dir = java.io.File(cacheDir, "share")
                 val file = java.io.File(dir, "backup-${System.currentTimeMillis()}.json")
-                file.writeText(payload)
+                withContext(Dispatchers.IO) {
+                    dir.mkdirs()
+                    file.writeText(payload)
+                }
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     this@SettingsActivity, "$packageName.fileprovider", file
                 )
