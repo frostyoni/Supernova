@@ -342,10 +342,12 @@ class SearchController(
         binding.searchBackdrop.setOnClickListener { hide() }
 
         // The window is adjustNothing and edge-to-edge, so the panel pads
-        // itself out of the system bars. The keyboard overlaps the panel, but
-        // the results pad past it: a list that nearly fits can't be dragged,
-        // so the drag that drops the keyboard never came and its last rows
-        // stayed under it (#284).
+        // itself out of the system bars. WINDOW mode already starts below the
+        // status bar (its top margin clears it), so padding by the inset
+        // again left a status bar's worth of empty plate above the field.
+        // Its card is sized by the list instead of the screen: the list is
+        // capped where the keyboard (or the card's own bottom gap) begins and
+        // scrolls within it, so a short list leaves a short card.
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
@@ -355,13 +357,25 @@ class SearchController(
             val gutter = WideScreen.gutterPx(
                 view.context, view.resources.displayMetrics.widthPixels - bars.left - bars.right
             )
-            view.setPadding(bars.left + gutter, bars.top, bars.right + gutter, 0)
             val density = view.resources.displayMetrics.density
-            // The floating window stops short of the screen's bottom: only
-            // the part of the keyboard that rises past its edge covers it.
-            val windowGap = (ui.root.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom - windowGap
-            ui.searchResults.setPadding(0, 0, 0, (24 * density).toInt() + maxOf(bars.bottom, ime))
+            val window = windowMode()
+            val panelTop = if (window) (WINDOW_TOP_DP * density).toInt() else 0
+            view.setPadding(bars.left + gutter, maxOf(0, bars.top - panelTop), bars.right + gutter, 0)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            val foot = (RESULTS_FOOT_DP * density).toInt()
+            if (window) {
+                val reserve = maxOf((WINDOW_BOTTOM_DP * density).toInt(), ime + (WINDOW_IME_GAP_DP * density).toInt())
+                val pill = (WINDOW_PILL_DP * density).toInt()
+                val screen = view.resources.displayMetrics.heightPixels
+                ui.searchResults.maxHeight = (screen - panelTop - view.paddingTop - pill - reserve).coerceAtLeast(0)
+                ui.searchResults.setPadding(0, 0, 0, foot)
+            } else {
+                // The results pad past the keyboard: a list that nearly fits
+                // can't be dragged, so the drag that drops the keyboard never
+                // came and its last rows stayed under it (#284).
+                ui.searchResults.maxHeight = 0
+                ui.searchResults.setPadding(0, 0, 0, foot + maxOf(bars.bottom, ime))
+            }
             insets
         }
         root.requestApplyInsets()
@@ -639,29 +653,15 @@ class SearchController(
         onClearRecents = ::clearRecentQueries
     )
 
-    // The empty search window: recent searches, suggested shortcuts, the
-    // recently opened apps, then - under a hairline - the drawer's folders
-    // and every app that isn't in one.
+    // The empty search window: recent searches, suggested shortcuts and the
+    // recently opened apps in a single row. Deliberately not the drawer's
+    // list - search is for finding an app, and the drawer is one swipe away.
     private fun showZeroState() {
         val frequent = viewModel.recentApps(gridColumns())
         val shortcuts = SuggestedShortcuts.pills(viewModel)
-        // Folder members live inside their folder, as in the drawer.
-        // A folder inside another (#229) lives inside it too.
-        val groups = viewModel.drawerFolderGroups().filter { viewModel.drawerFolderHasContent(it) }
-        val inFolders = groups.filter { viewModel.leavesMainList(it) }.flatMapTo(HashSet()) { it.members }
-        val shown = groups.filterNot { com.supernova.launcher.data.TabFolders.keyOf(it.id) in inFolders }
-        val folders = shown.map { group ->
-            SearchResult.Folder(
-                itemId = null, groupId = group.id, label = group.name,
-                icon = folderIcon(com.supernova.launcher.search.FolderSearchProvider.Hit(null, group.id, group.name))
-            )
-        }
-        val allApps = com.supernova.launcher.data.LabelOrder.sorted(
-            viewModel.visibleApps().filterNot { viewModel.hiddenKey(it) in inFolders }
-        ) { it.label }
         val surface = overlaySurface ?: return
         styleSurface(surface)
-        surface.adapter.submitZeroState(shortcuts, frequent, allApps, folders, recentQueries)
+        surface.adapter.submitZeroState(shortcuts, frequent, recentQueries)
     }
 
     private fun openContact(contact: SearchResult.Contact) {
@@ -702,10 +702,24 @@ class SearchController(
             val side = if (windowMode) binding.root.dp(14f).toInt() else 0
             params.leftMargin = side
             params.rightMargin = side
-            params.topMargin = if (windowMode) binding.root.dp(48f).toInt() else 0
-            params.bottomMargin = if (windowMode) binding.root.dp(160f).toInt() else 0
+            params.topMargin = if (windowMode) binding.root.dp(WINDOW_TOP_DP).toInt() else 0
+            params.bottomMargin = if (windowMode) binding.root.dp(WINDOW_BOTTOM_DP).toInt() else 0
+            params.height = if (windowMode) {
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            } else {
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            }
             ui.root.layoutParams = params
         }
+        // The floating card wraps its list; the full-screen sheet fills the
+        // rest of the window.
+        val listParams = ui.searchResults.layoutParams as? android.widget.LinearLayout.LayoutParams
+        if (listParams != null) {
+            listParams.height = if (windowMode) android.view.ViewGroup.LayoutParams.WRAP_CONTENT else 0
+            listParams.weight = if (windowMode) 0f else 1f
+            ui.searchResults.layoutParams = listParams
+        }
+        ui.root.requestApplyInsets()
         if (windowMode) {
             ui.root.background = com.supernova.launcher.ui.theme.SurfaceShapes.background(
                 resolved.surface, null, binding.root.dp(24f)
@@ -772,5 +786,13 @@ class SearchController(
         const val OPAQUE = 255
         const val TOP_HIT_MIN_CHARS = 3
         const val TOP_HIT_MAX_SHORTCUTS = 6
+        // WINDOW mode's floating card: its distance from the window's top and
+        // bottom edges, the room the pill takes, and the gap it keeps above
+        // the keyboard.
+        const val WINDOW_TOP_DP = 48f
+        const val WINDOW_BOTTOM_DP = 160f
+        const val WINDOW_PILL_DP = 60f
+        const val WINDOW_IME_GAP_DP = 8f
+        const val RESULTS_FOOT_DP = 24f
     }
 }
