@@ -24,7 +24,11 @@ enum class ScrollEffect {
     GLASS,
     WIPE,
     ZOOM_FADE,
-    THROW;
+    THROW,
+    FADE,
+    PUSH,
+    PARALLAX,
+    SWING;
 
     // Its name in the store and in a backup, read back leniently.
     object Names : SettingEnumSerializer<ScrollEffect>("ScrollEffect", entries, NONE)
@@ -54,6 +58,10 @@ object PageTransformers {
             ScrollEffect.WIPE -> ::wipe
             ScrollEffect.ZOOM_FADE -> ::zoomFade
             ScrollEffect.THROW -> ::throwAway
+            ScrollEffect.FADE -> ::fade
+            ScrollEffect.PUSH -> ::push
+            ScrollEffect.PARALLAX -> ::parallax
+            ScrollEffect.SWING -> ::swing
         }
         return ViewPager2.PageTransformer { page, position ->
             // A page a whole page or more away is out of view in a plain
@@ -278,6 +286,55 @@ object PageTransformers {
         }
     }
 
+    private fun fade(page: View, position: Float) {
+        // The slide is cancelled, so the moving page fades in or out over the
+        // one in view rather than sliding across it.
+        page.translationX = -position * page.width
+        page.translationZ = 0f
+        page.alpha = 1f - abs(position)
+    }
+
+    private fun push(page: View, position: Float) {
+        if (position > 0f) {
+            // Incoming keeps the slide, whole and above the page it covers.
+            page.translationX = 0f
+            page.translationZ = 1f
+            page.alpha = 1f
+        } else {
+            // Outgoing gives way a third of a page and dims, as a screen
+            // pushed behind another.
+            page.translationX = position * page.width * (PUSH_SHIFT - 1f)
+            page.translationZ = 0f
+            page.alpha = (1f + position * PUSH_DIM).coerceIn(0f, 1f)
+        }
+    }
+
+    private fun parallax(page: View, position: Float) {
+        if (position > 0f) {
+            // Incoming keeps the slide's own rate and so leads, drawn over
+            // the trailing page it passes.
+            page.translationX = 0f
+            page.translationZ = 1f
+            page.alpha = 1f
+        } else {
+            // Outgoing trails at a fraction of the finger's move and dims,
+            // so the pair reads as two planes, one behind the other.
+            page.translationX = position * page.width * (PARALLAX_RATE - 1f)
+            page.translationZ = 0f
+            page.alpha = (1f + position * PARALLAX_DIM).coerceIn(0f, 1f)
+        }
+    }
+
+    private fun swing(page: View, position: Float) {
+        // Hangs from a pivot below the page, so it turns like a pendulum as
+        // it slides, at its furthest at the neighbour slot where it is
+        // already faded out.
+        page.pivotX = page.width / 2f
+        page.pivotY = page.height * SWING_PIVOT
+        page.rotation = SWING_ANGLE * position
+        page.alpha = 1f - abs(position)
+    }
+
     private const val MIN_SCALE = 0.72f
     private const val MIN_ALPHA = 0.35f
     private const val FLIP_CAMERA_DISTANCE = 12000f
@@ -292,4 +349,10 @@ object PageTransformers {
     private const val THROW_HOLD = 0.5f
     private const val THROW_LIFT = 0.7f
     private const val THROW_ROTATION = 20f
+    private const val PUSH_SHIFT = 0.3f
+    private const val PUSH_DIM = 0.4f
+    private const val PARALLAX_RATE = 0.55f
+    private const val PARALLAX_DIM = 0.3f
+    private const val SWING_ANGLE = 6f
+    private const val SWING_PIVOT = 1.25f
 }
