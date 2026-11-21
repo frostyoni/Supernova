@@ -117,6 +117,9 @@ class ActionRunner(
                 launchShortcut(bound.payload)
                 true
             }
+            // Only a folder's own icon knows which folder it means; the swipe
+            // path (LauncherActivity.launchSwipeAction) launches the item.
+            GestureAction.LAUNCH_FOLDER_ITEM -> false
             GestureAction.LAUNCH_INTENT -> {
                 bound.payload?.let(host::launchIntentUri)
                 bound.payload != null

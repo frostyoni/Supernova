@@ -651,10 +651,6 @@ class LauncherViewModel(
         return state.value.model.items.filter { it.container == ContainerType.FOLDER && it.folderId == folderId }.sortedBy { it.rank }
     }
 
-    // The app a swipe-to-open folder's tap launches: the first one its window
-    // shows.
-    fun folderFirstMember(folderId: String): LauncherItem? = folderMembers(folderId).firstOrNull()
-
     fun setFolderSwipeToOpen(folderId: String, on: Boolean) = persist { repository.setFolderSwipeToOpen(folderId, on) }
 
     // What overlaps a placed item from below and above on its page.
