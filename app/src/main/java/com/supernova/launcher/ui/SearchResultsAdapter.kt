@@ -541,6 +541,9 @@ class SearchResultsAdapter(
             binding.resultLabel.setTextColor(textColor)
             binding.root.setOnLongClickListener(null)
             binding.root.isLongClickable = false
+            // A row reused as a web result kept the name of what it was
+            // before, which TalkBack read out.
+            binding.root.contentDescription = null
             // Contact-card action buttons from a previous bind (D4).
             val root = binding.root as ViewGroup
             (root.childCount - 1 downTo 0).forEach { index ->
