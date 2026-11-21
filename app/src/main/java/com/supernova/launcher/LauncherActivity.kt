@@ -2603,6 +2603,11 @@ class LauncherActivity :
             DockBgStyle.ROUNDED -> dockBackgroundDrawable(
                 resolvedDock, dp(prefs.dockBgRadius).toFloat(), dockBehindNav || dockFullBleed
             )
+            DockBgStyle.LIQUID -> com.supernova.launcher.ui.LiquidGlassDrawable(
+                this,
+                com.supernova.launcher.data.IconGlass.CLEAR,
+                dp(prefs.dockBgRadius).toFloat()
+            ).also { it.alpha = android.graphics.Color.alpha(resolvedDock.surface) }
             DockBgStyle.SQUARE -> dockBackgroundDrawable(resolvedDock, 0f, dockBehindNav || dockFullBleed)
         }
     }

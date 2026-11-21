@@ -617,6 +617,7 @@
     <string name="dock_icon_scale">Icon size</string>
     <string name="dock_bg_none">None</string>
     <string name="dock_bg_rounded">Rounded rectangle</string>
+    <string name="dock_bg_liquid">Liquid glass</string>
     <string name="dock_bg_square">Square</string>
     <string name="opacity_percent">%1$d%%</string>
     <string name="color_with_opacity">%1$s, %2$d%%</string>
