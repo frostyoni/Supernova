@@ -1386,6 +1386,9 @@ class SettingsActivity : AppCompatActivity() {
                     payload = "${pick.app.packageName}|${pick.shortcutId}@${pick.app.userSerial}",
                     label = pick.label
                 )
+                // Only a folder's own swipe rows offer this: there is no
+                // folder for a gesture to open an item of.
+                is com.supernova.launcher.ui.ActionPick.FolderItem -> return@show
                 is com.supernova.launcher.ui.ActionPick.Legacy -> {
                     pendingGestureShortcut = gesture
                     runLogged("open shortcut creator") {

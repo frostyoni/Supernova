@@ -4025,7 +4025,12 @@ class LauncherActivity :
     // screen. Targets are stored as LaunchTarget strings, action uris
     // (ActionShortcut) or intent URIs (CreatedShortcuts).
     private fun showSwipeActionPicker(item: LauncherItem, down: Boolean, onPicked: (String?) -> Unit = {}) {
-        val actions = com.supernova.launcher.gesture.ActionShortcut.choices + GestureAction.JUMP_TO_PAGE
+        val actions = buildList {
+            addAll(com.supernova.launcher.gesture.ActionShortcut.choices)
+            add(GestureAction.JUMP_TO_PAGE)
+            // A folder's own swipes can open one of its apps by position.
+            if (item.itemType == ItemType.FOLDER) add(GestureAction.LAUNCH_FOLDER_ITEM)
+        }
         com.supernova.launcher.ui.ActionPickerSheet.show(
             this,
             viewModel,
@@ -4040,6 +4045,13 @@ class LauncherActivity :
                 com.supernova.launcher.ui.ActionPick.None -> save(null, null)
                 is com.supernova.launcher.ui.ActionPick.Action ->
                     save(com.supernova.launcher.gesture.ActionShortcut.encode(pick.action), pick.label)
+                is com.supernova.launcher.ui.ActionPick.FolderItem ->
+                    save(
+                        com.supernova.launcher.gesture.ActionShortcut.encode(
+                            GestureAction.LAUNCH_FOLDER_ITEM, pick.index.toString()
+                        ),
+                        pick.label
+                    )
                 is com.supernova.launcher.ui.ActionPick.Page -> {
                     val page = pick.index.toString()
                     val target = com.supernova.launcher.gesture.ActionShortcut.encode(GestureAction.JUMP_TO_PAGE, page)
@@ -5022,27 +5034,40 @@ class LauncherActivity :
         inFolder?.invoke()
         when {
             up && opensOnSwipe -> showFolderPopup(v, item)
-            up -> launchSwipeAction(item, item.swipeAction, item.swipeLabel)
-            else -> launchSwipeAction(item, item.swipeActionDown, item.swipeLabelDown)
+            up -> launchSwipeAction(item, item.swipeAction, item.swipeLabel, v)
+            else -> launchSwipeAction(item, item.swipeActionDown, item.swipeLabelDown, v)
         }
     }
 
     // A swipe-to-open folder's tap: the first app its window shows, launched
     // from the folder's icon. A folder with nothing to launch opens instead.
     private fun launchFolderFirstItem(folder: LauncherItem, anchor: View) {
-        val first = viewModel.folderFirstMember(folder.id)
-        if (first == null) {
-            showFolderPopup(anchor, folder)
-            return
-        }
-        launchItem(first, anchor)
+        launchFolderItem(folder, 0, anchor)
     }
 
-    private fun launchSwipeAction(item: LauncherItem, action: String?, label: String?) {
+    // A folder's own swipe: the app at [index] in the order the folder shows.
+    // A position it no longer has opens the folder, as the tap above does.
+    private fun launchFolderItem(folder: LauncherItem, index: Int, anchor: View?) {
+        val member = viewModel.folderMembers(folder.id).getOrNull(index)
+        if (member == null) {
+            showFolderPopup(anchor ?: binding.root, folder)
+            return
+        }
+        launchItem(member, anchor)
+    }
+
+    private fun launchSwipeAction(item: LauncherItem, action: String?, label: String?, anchor: View? = null) {
         action ?: return
-        // A launcher-action uri runs through the shared action dispatcher.
-        com.supernova.launcher.gesture.ActionShortcut.decode(action)?.let {
-            actions.run(it)
+        // A launcher-action uri runs through the shared action dispatcher;
+        // a folder's position actions are resolved against the icon itself.
+        com.supernova.launcher.gesture.ActionShortcut.decode(action)?.let { binding ->
+            if (binding.action == GestureAction.LAUNCH_FOLDER_ITEM) {
+                if (item.itemType == ItemType.FOLDER) {
+                    launchFolderItem(item, binding.payload?.toIntOrNull() ?: 0, anchor)
+                }
+                return
+            }
+            actions.run(binding)
             return
         }
         // An intent an app's shortcut screen made (a direct dial, a route).

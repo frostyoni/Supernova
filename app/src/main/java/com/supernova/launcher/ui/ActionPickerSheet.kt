@@ -36,6 +36,8 @@ sealed class ActionPick {
     data object None : ActionPick()
     data class Action(val action: GestureAction, val label: String) : ActionPick()
     data class Page(val index: Int, val label: String) : ActionPick()
+    // A position in the folder the swiped icon stands for; index is 0-based.
+    data class FolderItem(val index: Int, val label: String) : ActionPick()
     data class App(val app: LaunchableApp) : ActionPick()
     data class Shortcut(val app: LaunchableApp, val shortcutId: String, val label: String) : ActionPick()
     data class Legacy(val component: ComponentName, val label: String) : ActionPick()
@@ -185,19 +187,37 @@ class ActionPickerSheet private constructor(
         val offered = com.supernova.launcher.gesture.ActionShortcut.offered(
             actions, viewModel.appCatalog().hasPrivateSpace()
         )
-        return listOf(none) + offered.map { action ->
-            val label = context.getString(EnumLabels.of(action))
-            // The same shaped tile the action gets as a home icon.
-            val tile = AppCompatResources.getDrawable(context, ActionIcons.of(action))
-                ?.let { viewModel.appCatalog().renderActionTile(it) }
-            Row(tile, label) {
-                if (action == GestureAction.JUMP_TO_PAGE) {
-                    pickPage { index, pageLabel -> picked(ActionPick.Page(index, pageLabel)) }
-                } else {
-                    picked(ActionPick.Action(action, label))
-                }
+        return listOf(none) + offered.flatMap { action ->
+            // A folder's own swipes pick a position inside it, so one
+            // action row becomes one row per item offered.
+            if (action == GestureAction.LAUNCH_FOLDER_ITEM) folderItemRows() else listOf(actionRow(action))
+        }
+    }
+
+    private fun actionRow(action: GestureAction): Row {
+        val label = context.getString(EnumLabels.of(action))
+        // The same shaped tile the action gets as a home icon.
+        val tile = AppCompatResources.getDrawable(context, ActionIcons.of(action))
+            ?.let { viewModel.appCatalog().renderActionTile(it) }
+        return Row(tile, label) {
+            if (action == GestureAction.JUMP_TO_PAGE) {
+                pickPage { index, pageLabel -> picked(ActionPick.Page(index, pageLabel)) }
+            } else {
+                picked(ActionPick.Action(action, label))
             }
         }
+    }
+
+    private fun folderItemRows(): List<Row> = listOf(
+        folderItemRow(0, R.string.action_first_item_in_folder),
+        folderItemRow(1, R.string.action_second_item_in_folder)
+    )
+
+    private fun folderItemRow(index: Int, label: Int): Row {
+        val text = context.getString(label)
+        val tile = AppCompatResources.getDrawable(context, ActionIcons.of(GestureAction.LAUNCH_FOLDER_ITEM))
+            ?.let { viewModel.appCatalog().renderActionTile(it) }
+        return Row(tile, text) { picked(ActionPick.FolderItem(index, text)) }
     }
 
     private fun appRows(): List<Row> =
