@@ -2603,11 +2603,24 @@ class LauncherActivity :
             DockBgStyle.ROUNDED -> dockBackgroundDrawable(
                 resolvedDock, dp(prefs.dockBgRadius).toFloat(), dockBehindNav || dockFullBleed
             )
-            DockBgStyle.LIQUID -> com.supernova.launcher.ui.LiquidGlassDrawable(
-                this,
-                com.supernova.launcher.data.IconGlass.CLEAR,
-                dp(prefs.dockBgRadius).toFloat()
-            ).also { it.alpha = android.graphics.Color.alpha(resolvedDock.surface) }
+            DockBgStyle.LIQUID -> {
+                val night = (resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                com.supernova.launcher.ui.LiquidGlassDrawable(
+                    this,
+                    if (night) com.supernova.launcher.data.IconGlass.SMOKED
+                    else com.supernova.launcher.data.IconGlass.FROSTED,
+                    dp(prefs.dockBgRadius).toFloat()
+                ).also {
+                    // Glass needs to read as a surface even at the dock's
+                    // usual low opacity; the slider can only add to that.
+                    it.alpha = maxOf(
+                        android.graphics.Color.alpha(resolvedDock.surface),
+                        (0.55f * 255).toInt()
+                    )
+                }
+            }
             DockBgStyle.SQUARE -> dockBackgroundDrawable(resolvedDock, 0f, dockBehindNav || dockFullBleed)
         }
     }

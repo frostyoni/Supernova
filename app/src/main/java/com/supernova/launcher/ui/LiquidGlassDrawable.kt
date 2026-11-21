@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
+import android.content.res.Configuration
 import android.graphics.LinearGradient
 import android.graphics.Outline
 import android.graphics.Paint
@@ -52,9 +53,14 @@ class LiquidGlassDrawable @JvmOverloads constructor(
     // Sampling the wallpaper into the cache keeps its own paint: a colour
     // filter or alpha on the blit must not be applied again here.
     private val sample = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val night = (application.resources.configuration.uiMode and
+        Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     private val veil = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        val alpha = (veilAlpha.coerceIn(0f, 1f) * OPAQUE).roundToInt()
-        color = ColorUtils.setAlphaComponent(veilColor, alpha)
+        // White over a light wallpaper, black over a dark one: a white veil
+        // in dark mode made the pane a flat pale rectangle.
+        val colour = if (night) Color.BLACK else veilColor
+        val alpha = (if (night) NIGHT_VEIL_ALPHA else veilAlpha).coerceIn(0f, 1f)
+        color = ColorUtils.setAlphaComponent(colour, (alpha * OPAQUE).roundToInt())
     }
     private var cache: Bitmap? = null
     private var cachedGeneration = -1
@@ -118,6 +124,7 @@ class LiquidGlassDrawable @JvmOverloads constructor(
             }
             drawRect(0f, 0f, width.toFloat(), height.toFloat(), veil)
             painter.drawPane(this, glass, Color.WHITE, width, height)
+            drawSpecular(this, width, height)
         }
         painter.drawEdge(canvas, path, glass, width, height)
         cachedGeneration = WallpaperBlur.generation
@@ -167,6 +174,23 @@ class LiquidGlassDrawable @JvmOverloads constructor(
     private fun soft(color: Int): Int =
         ColorUtils.setAlphaComponent(color, (COLOUR_WASH * OPAQUE).roundToInt())
 
+    // One diagonal band of light across the pane: the bit the eye reads as a
+    // glossy surface rather than a tinted rectangle.
+    private fun drawSpecular(canvas: Canvas, width: Int, height: Int) {
+        val gloss = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f, 0f, width * 0.85f, height * 0.6f,
+                intArrayOf(
+                    ColorUtils.setAlphaComponent(Color.WHITE, (SPECULAR * OPAQUE).roundToInt()),
+                    Color.TRANSPARENT
+                ),
+                floatArrayOf(0f, 1f),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), gloss)
+    }
+
     private fun cornerRadius(width: Int, height: Int): Float =
         radius.coerceIn(0f, minOf(width, height) / 2f)
 
@@ -206,5 +230,7 @@ class LiquidGlassDrawable @JvmOverloads constructor(
         // A neutral wash when the system reports no wallpaper colours either.
         const val FALLBACK_PRIMARY = 0xFF4A5A6A.toInt()
         const val COLOUR_WASH = 0.62f
+        const val NIGHT_VEIL_ALPHA = 0.30f
+        const val SPECULAR = 0.09f
     }
 }

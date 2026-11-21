@@ -659,17 +659,25 @@ object SettingsCatalogue {
                     min = 0, max = 24,
                     get = { if (it.dockBgStyle == DockBgStyle.SQUARE) 0 else it.dockBgRadius },
                     // A square dock from before the switch becomes a rounded
-                    // one at the radius picked.
+                    // one at the radius picked; a liquid one stays liquid.
                     set = {
+                        val style = viewModel.state.value.prefs.dockBgStyle
                         viewModel.setAll(
-                            listOf(
-                                com.supernova.launcher.data.PrefWrite(Pref.dockBgRadius, it),
-                                com.supernova.launcher.data.PrefWrite(Pref.dockBgStyle, DockBgStyle.ROUNDED)
-                            )
+                            buildList {
+                                add(com.supernova.launcher.data.PrefWrite(Pref.dockBgRadius, it))
+                                if (style == DockBgStyle.SQUARE) {
+                                    add(com.supernova.launcher.data.PrefWrite(Pref.dockBgStyle, DockBgStyle.ROUNDED))
+                                }
+                            }
                         )
                     },
                     display = { context.getString(R.string.padding_dp_value, it) },
-                    preview = { p, v -> p.copy(dockBgRadius = v, dockBgStyle = DockBgStyle.ROUNDED) }
+                    preview = { p, v ->
+                        p.copy(
+                            dockBgRadius = v,
+                            dockBgStyle = if (p.dockBgStyle == DockBgStyle.SQUARE) DockBgStyle.ROUNDED else p.dockBgStyle
+                        )
+                    }
                 ).hiddenWhen(dockBgHidden).nested(),
                 SettingItem.Toggle(
                     R.string.dock_bg_behind_nav,
