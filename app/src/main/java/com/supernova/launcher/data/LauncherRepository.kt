@@ -823,6 +823,98 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    // Appends a newly-bound widget to a workspace widget stack, up to the
+    // two-widget limit. False when the stack was already full; the caller
+    // must free the unused id.
+    suspend fun addWidgetToStack(
+        itemId: String,
+        appWidgetId: Int,
+        provider: String,
+        userSerial: Long = 0L
+    ): Boolean {
+        var added = false
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET &&
+                        item.widgetStack.size < MAX_WIDGET_STACK_MEMBERS
+                    ) {
+                        added = true
+                        item.copy(
+                            widgetStack = item.widgetStack + WidgetStackMember(appWidgetId, provider, userSerial),
+                            widgetStackFront = 0
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+        return added
+    }
+
+    // Removes the stack member at the 1-based front index. Front is reset to
+    // the primary widget. Returns the id that was removed, if any, so the
+    // caller can release its host id.
+    suspend fun removeWidgetFromStack(itemId: String, frontIndex: Int): Int? {
+        var removedId: Int? = null
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        val memberIndex = frontIndex - 1
+                        if (memberIndex in item.widgetStack.indices) {
+                            removedId = item.widgetStack[memberIndex].appWidgetId
+                            item.copy(
+                                widgetStack = item.widgetStack.filterIndexed { i, _ -> i != memberIndex },
+                                widgetStackFront = 0
+                            )
+                        } else {
+                            item
+                        }
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+        return removedId
+    }
+
+    // Switches which widget in a stack is in front.
+    suspend fun setWidgetStackFront(itemId: String, frontIndex: Int) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        item.copy(widgetStackFront = frontIndex.coerceIn(0, item.widgetStack.size))
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    // Rebinds a restored stack member by replacing its placeholder id.
+    suspend fun setWidgetStackMemberId(itemId: String, memberIndex: Int, appWidgetId: Int) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        item.copy(
+                            widgetStack = item.widgetStack.mapIndexed { i, member ->
+                                if (i == memberIndex) member.copy(appWidgetId = appWidgetId) else member
+                            }
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
     // A widget bound to a card. Add card's Widget saves nothing until the
     // widget is bound, so a card that doesn't exist yet is made here, at the
     // end of the feed (a cancelled pick leaves no empty card behind), and
@@ -1559,6 +1651,8 @@ class LauncherRepository(private val context: Context) {
         private const val MIN_WIDGET_SPAN = 0.5f
         // Shared with the surfaces that offer an add-page control.
         const val MAX_PAGES = 9
+        // Two widgets total per stack: the primary plus this many members.
+        const val MAX_WIDGET_STACK_MEMBERS = 1
         // The top of the Widget padding bar, which a widget's own padding
         // shares.
         const val MAX_WIDGET_PADDING_DP = 24

@@ -18,8 +18,10 @@ internal object PackageRemoval {
                 // So only the launcher's own user losing the app takes
                 // its widgets: the work copy of an app going leaves the
                 // personal widget alone.
-                ItemType.WIDGET -> userSerial == ownUserSerial &&
-                    item.widgetProvider?.substringBefore('/') == packageName
+                ItemType.WIDGET -> userSerial == ownUserSerial && (
+                    item.widgetProvider?.substringBefore('/') == packageName ||
+                        item.widgetStack.any { it.provider.substringBefore('/') == packageName }
+                )
                 ItemType.FOLDER -> false
             }
         }

@@ -352,6 +352,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                     "${it.swipeAction},${it.swipeActionDown},${it.swipeToOpen},${it.widgetPadding}," +
                     // A restored widget's new id swaps its placeholder for the real view.
                     "${it.appWidgetId}" +
+                    stackSignature(it) +
                     // Pausing work apps greys their icons.
                     PausedIcon.mark(state, it.userSerial) +
                     FolderIconDrawable.customIconKey(it) +
@@ -405,6 +406,12 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                     "/${it.appEdit?.hashCode()}" +
                     PausedIcon.mark(state, it.userSerial)
             }
+
+    private fun stackSignature(item: LauncherItem): String {
+        if (item.itemType != ItemType.WIDGET || item.widgetStack.isEmpty()) return ""
+        return "|${item.widgetStackFront}|" +
+            item.widgetStack.joinToString(",") { "${it.appWidgetId}:${it.provider}:${it.userSerial}" }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
