@@ -639,11 +639,12 @@ object SettingsCatalogue {
                     set = { viewModel.set(Pref.dockPages, it) },
                     display = { it.toString() }
                 ).hiddenWhen(dockHidden),
-                SettingItem.Toggle(
+                rows.choice(
                     R.string.dock_bg_style,
-                    get = { it.dockBgStyle != DockBgStyle.NONE },
-                    set = { viewModel.set(Pref.dockBgStyle, if (it) DockBgStyle.ROUNDED else DockBgStyle.NONE) }
-                ).hiddenWhen(dockHidden),
+                    listOf(DockBgStyle.NONE, DockBgStyle.ROUNDED, DockBgStyle.LIQUID),
+                    { it.dockBgStyle },
+                    { EnumLabels.of(it) }
+                ) { viewModel.set(Pref.dockBgStyle, it) }.hiddenWhen(dockHidden),
                 SettingItem.Slider(
                     R.string.dock_bg_opacity,
                     min = 0, max = 100,

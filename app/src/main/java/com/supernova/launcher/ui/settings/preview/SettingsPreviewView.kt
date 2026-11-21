@@ -707,6 +707,13 @@ class SettingsPreviewView @JvmOverloads constructor(
         prefs: LauncherPrefs,
         resolved: com.supernova.launcher.ui.theme.ResolvedSurface
     ): Drawable? {
+        if (prefs.dockBgStyle == DockBgStyle.LIQUID) {
+            return com.supernova.launcher.ui.LiquidGlassDrawable(
+                context,
+                com.supernova.launcher.data.IconGlass.CLEAR,
+                dp(prefs.dockBgRadius).toFloat()
+            ).also { it.alpha = android.graphics.Color.alpha(resolved.surface) }
+        }
         val radius = when (prefs.dockBgStyle) {
             DockBgStyle.NONE -> return null
             DockBgStyle.ROUNDED -> dp(prefs.dockBgRadius).toFloat()
