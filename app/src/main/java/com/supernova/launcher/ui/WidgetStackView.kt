@@ -2,6 +2,8 @@ package com.supernova.launcher.ui
 
 import android.appwidget.AppWidgetHostView
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
@@ -35,6 +37,8 @@ class WidgetStackView(
     private var downX = 0f
     private var downY = 0f
     private var tracking = false
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val gesture = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean = true
@@ -152,6 +156,32 @@ class WidgetStackView(
             ?.start()
 
         controller.onStackFrontChanged(item.id, frontIndex)
+        invalidate()
+    }
+
+    // Which widget is showing, as dots at the foot of the cell. Drawn over
+    // the widget: one dot is cheap, and a child view there would take the
+    // widget's taps.
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        val count = children.size
+        if (count <= 1) return
+        val density = resources.displayMetrics.density
+        val radius = 2.2f * density
+        val gap = 7f * density
+        val total = count * radius * 2 + (count - 1) * gap
+        val left = width / 2f - total / 2f
+        val centreY = height - 10f * density
+        pillPaint.color = PILL_COLOR
+        canvas.drawRoundRect(
+            left - 7f * density, centreY - radius - 4f * density,
+            left + total + 7f * density, centreY + radius + 4f * density,
+            radius + 4f * density, radius + 4f * density, pillPaint
+        )
+        for (index in 0 until count) {
+            dotPaint.color = if (index == frontIndex) ACTIVE_DOT else INACTIVE_DOT
+            canvas.drawCircle(left + radius + index * (radius * 2 + gap), centreY, radius, dotPaint)
+        }
     }
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
@@ -161,6 +191,12 @@ class WidgetStackView(
                 downX = ev.x
                 downY = ev.y
                 tracking = false
+                // Claim the stream from the pager at once. Waiting for the
+                // first move lost the race to ViewPager2 on ordinary swipes,
+                // which turned the page instead of the stack.
+                if (children.size > 1) {
+                    (parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
+                }
             }
             MotionEvent.ACTION_MOVE -> if (!tracking && children.size > 1) {
                 val dx = ev.x - downX
@@ -239,5 +275,8 @@ class WidgetStackView(
         private const val MIN_FLING_VELOCITY = 500f
         private const val SWITCH_ANIMATION_MS = 150L
         private const val HORIZONTAL_DOMINANCE = 1.5f
+        private const val PILL_COLOR = 0x33000000
+        private const val ACTIVE_DOT = 0xFFFFFFFF.toInt()
+        private const val INACTIVE_DOT = 0x66FFFFFF
     }
 }
