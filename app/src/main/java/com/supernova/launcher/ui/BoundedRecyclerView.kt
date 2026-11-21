@@ -15,8 +15,8 @@ class BoundedRecyclerView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : RecyclerView(context, attrs, defStyleAttr) {
 
-    // 0 = no cap.
-    var maxHeight: Int = 0
+    // -1 = no cap. Zero is a real cap: a card with no room gets no list.
+    var maxHeight: Int = -1
         set(value) {
             field = value
             requestLayout()
@@ -26,7 +26,7 @@ class BoundedRecyclerView @JvmOverloads constructor(
         var spec = heightSpec
         val mode = View.MeasureSpec.getMode(heightSpec)
         // An exact height (the horizontal paging viewport) is never capped.
-        if (maxHeight > 0 && mode != View.MeasureSpec.EXACTLY) {
+        if (maxHeight >= 0 && mode != View.MeasureSpec.EXACTLY) {
             val size = View.MeasureSpec.getSize(heightSpec)
             val capped = if (mode == View.MeasureSpec.UNSPECIFIED) maxHeight else minOf(size, maxHeight)
             spec = View.MeasureSpec.makeMeasureSpec(capped, View.MeasureSpec.AT_MOST)

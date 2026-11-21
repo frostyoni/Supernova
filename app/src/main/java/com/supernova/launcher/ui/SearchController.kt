@@ -373,7 +373,7 @@ class SearchController(
                 // The results pad past the keyboard: a list that nearly fits
                 // can't be dragged, so the drag that drops the keyboard never
                 // came and its last rows stayed under it (#284).
-                ui.searchResults.maxHeight = 0
+                ui.searchResults.maxHeight = -1
                 ui.searchResults.setPadding(0, 0, 0, foot + maxOf(bars.bottom, ime))
             }
             insets
