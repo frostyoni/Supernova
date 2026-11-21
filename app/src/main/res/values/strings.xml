@@ -683,6 +683,10 @@
     <string name="effect_wipe">Wipe</string>
     <string name="effect_zoom_fade">Zoom fade</string>
     <string name="effect_throw">Throw</string>
+    <string name="effect_fade">Fade</string>
+    <string name="effect_push">Push</string>
+    <string name="effect_parallax">Parallax</string>
+    <string name="effect_swing">Swing</string>
 
     <string name="stepper_decrease">Decrease</string>
     <string name="stepper_increase">Increase</string>
