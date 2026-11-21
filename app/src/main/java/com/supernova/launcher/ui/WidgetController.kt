@@ -109,10 +109,20 @@ class WidgetController(
     // and so do its cached view and size. One left behind by a recreate or a
     // process death in between is reclaimed by sweepOrphanIds.
     fun releaseWidget(item: LauncherItem) {
-        val id = item.appWidgetId ?: return
-        appWidgetHost.deleteAppWidgetId(id)
-        lastReportedSizes.remove(id)
-        widgetHostViews.remove(id)
+        val ids = listOfNotNull(item.appWidgetId) + item.widgetStack.mapNotNull { it.appWidgetId }
+        if (ids.isEmpty()) return
+        ids.forEach { id ->
+            appWidgetHost.deleteAppWidgetId(id)
+            lastReportedSizes.remove(id)
+            widgetHostViews.remove(id)
+        }
+        stackContainers.remove(item.id)
+    }
+
+    fun releaseWidgetId(widgetId: Int) {
+        appWidgetHost.deleteAppWidgetId(widgetId)
+        lastReportedSizes.remove(widgetId)
+        widgetHostViews.remove(widgetId)
     }
 
     // One host view per card widget, reused on every bind. The feed rebinds
@@ -162,6 +172,8 @@ class WidgetController(
         data class Restored(val itemId: String) : Target
         // Replace: the widget stands in for the desktop search bar.
         data object SearchBar : Target
+        // Add as a second member of an existing workspace widget stack.
+        data class Stack(val itemId: String) : Target
     }
 
     // Kept in the view model: a dark-mode, font-size or language change
@@ -182,6 +194,8 @@ class WidgetController(
     // AppWidgetHostView leaves it blank until the provider redelivers its
     // RemoteViews, which flashed the whole screen after every drop.
     private val widgetHostViews = mutableMapOf<Int, AppWidgetHostView>()
+    // Stack containers, reused across page rebinds so members stop flashing.
+    private val stackContainers = mutableMapOf<String, WidgetStackView>()
 
     // Touch stream currently owned by a widget's own scrolling content, plus
     // the widget the finger went down on while it is still undecided.
@@ -598,13 +612,56 @@ class WidgetController(
     }
 
     fun reportWidgetSize(item: LauncherItem, view: View) {
-        val widgetId = item.appWidgetId ?: return
-        val hostView = view as? AppWidgetHostView ?: return
-        if (view.width <= 0 || view.height <= 0) return
-        val size = SizeF(view.width.toFloat(), view.height.toFloat())
+        when (view) {
+            is WidgetStackView -> view.reportMemberSizes()
+            is AppWidgetHostView -> reportSize(item.appWidgetId ?: return, view, view.width, view.height)
+        }
+    }
+
+    // Called by WidgetStackView for every member, and by reportWidgetSize for
+    // single-widget items. Deduplicated so every layout pass doesn't spam the
+    // provider with size updates.
+    internal fun reportSize(widgetId: Int, hostView: AppWidgetHostView, widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        val size = SizeF(widthPx.toFloat(), heightPx.toFloat())
         if (lastReportedSizes[widgetId] == size) return
         lastReportedSizes[widgetId] = size
-        WidgetSizing.reportSize(hostView, view.width, view.height, activity.resources.displayMetrics.density)
+        WidgetSizing.reportSize(hostView, widthPx, heightPx, activity.resources.displayMetrics.density)
+    }
+
+    internal fun reportStackMemberSize(widgetId: Int, hostView: AppWidgetHostView, widthPx: Int, heightPx: Int) {
+        reportSize(widgetId, hostView, widthPx, heightPx)
+    }
+
+    // Host view reuse/exposure for the stack container. Members are cached in
+    // widgetHostViews so they survive page rebinds, and their corner radius is
+    // re-applied each time the container is reused.
+    fun stackMemberHostView(widgetId: Int): AppWidgetHostView? {
+        return widgetHostViews[widgetId]?.also(::applyWidgetCornerRadius) ?: run {
+            val info = appWidgetManager.getAppWidgetInfo(widgetId) ?: return null
+            createWidgetHostView(widgetId, info)?.also { widgetHostViews[widgetId] = it }
+        }
+    }
+
+    // Persist a stack front change. The container already switched visually.
+    fun onStackFrontChanged(itemId: String, frontIndex: Int) {
+        viewModel.setWidgetStackFront(itemId, frontIndex)
+    }
+
+    // Long-press menu row: pick a widget to add to an existing stack.
+    fun showPickerForStack(item: LauncherItem) {
+        if (item.widgetStack.size >= LauncherRepository.MAX_WIDGET_STACK_MEMBERS) {
+            Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val prefs = viewModel.state.value.prefs
+        val (cellWidth, cellHeight) = host.currentCellSizePx()
+        WidgetPickerSheet.show(
+            activity, cellWidth, cellHeight, prefs.gridCols, prefs.gridRows,
+            prefs = prefs,
+            onPicked = { info -> bind(info, Target.Stack(item.id)) },
+            icons = WidgetPickerIcons.of(viewModel.appCatalog())
+        )
     }
 
     // The one AppWidgetHostView factory: workspace items and feed cards both
@@ -629,6 +686,19 @@ class WidgetController(
     }
 
     fun buildWidgetView(item: LauncherItem): View {
+        // A stack can outlive a missing primary: a restore may have bound a
+        // member while the primary still waits for its placeholder.
+        if (item.widgetStack.isNotEmpty()) {
+            return stackContainers[item.id]?.apply { updateMembers(item) } ?: run {
+                val container = WidgetStackView(
+                    activity,
+                    this,
+                    item
+                ) { v -> host.onWidgetLongPress(v, item) }
+                stackContainers[item.id] = container
+                container
+            }
+        }
         val widgetId = item.appWidgetId ?: return fallbackWidgetView(item)
         val hostView = widgetHostViews[widgetId]?.also(::applyWidgetCornerRadius)
             ?: run {
@@ -711,13 +781,28 @@ class WidgetController(
 
     // Widgets and cards a restore left without a live id get a new one where
     // that takes no asking: the bind permission held, no setup screen needed.
-    // The rest wait on their placeholder's tap. Once per item a session, as a
-    // refused bind stays refused.
+    // The rest wait on their placeholder's tap. Once per item or member a
+    // session, as a refused bind stays refused.
     fun rebindRestoredWidgets(model: LauncherModel) {
         model.items
-            .filter { it.itemType == ItemType.WIDGET && it.appWidgetId == null }
+            .filter { it.itemType == ItemType.WIDGET }
             .forEach { item ->
-                rebindSilently(item.id, item.widgetProvider, item.userSerial) { viewModel.setWidgetId(item.id, it) }
+                if (item.appWidgetId == null) {
+                    rebindSilently(item.id, item.widgetProvider, item.userSerial) {
+                        viewModel.setWidgetId(item.id, it)
+                    }
+                }
+                item.widgetStack.forEachIndexed { index, member ->
+                    if (member.appWidgetId == null) {
+                        rebindSilently(
+                            "${item.id}:$index",
+                            member.provider,
+                            member.userSerial
+                        ) {
+                            viewModel.setWidgetStackMemberId(item.id, index, it)
+                        }
+                    }
+                }
             }
         model.feedCards
             .filter { FeaturedType.fromName(it.featuredType) == FeaturedType.WIDGET && it.appWidgetId == null }
@@ -983,6 +1068,23 @@ class WidgetController(
                 }
                 viewModel.setSearchBarWidget(
                     pending.widgetId, info.provider?.flattenToString().orEmpty()
+                )
+            }
+            is Target.Stack -> {
+                val stackItem = viewModel.state.value.model.items.firstOrNull { it.id == target.itemId }
+                if (stackItem == null ||
+                    stackItem.widgetStack.size >= LauncherRepository.MAX_WIDGET_STACK_MEMBERS
+                ) {
+                    WidgetAddTrail.fail("stack full or gone before placing", launcherState())
+                    abortPendingWidget()
+                    Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
+                    return
+                }
+                viewModel.addWidgetToStack(
+                    target.itemId,
+                    pending.widgetId,
+                    info.provider?.flattenToString().orEmpty(),
+                    serialOf(info.profile)
                 )
             }
         }

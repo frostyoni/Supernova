@@ -870,8 +870,8 @@ class LauncherViewModel(
     }
 
     // Every host id the model still references: workspace/dock items plus
-    // feed-card featured widgets. sweepOrphanWidgetIds reclaims the rest, so
-    // omitting a source here would delete its live widgets.
+    // every widget stack member, feed-card featured widgets. sweepOrphanWidgetIds
+    // reclaims the rest, so omitting a source here would delete its live widgets.
     // Every host id something still points at: widgets on the pages, widget
     // cards, and the search bar's Replace widget, which lives in a pref. The
     // orphan sweep deletes whatever this leaves out, so it must be complete,
@@ -880,12 +880,29 @@ class LauncherViewModel(
         if (!repository.modelReadable()) return null
         val model = repository.modelFlow.first()
         val searchBarWidget = preferences.snapshot().searchBarWidgetId
-        return (model.items.mapNotNull { it.appWidgetId } +
-            model.feedCards.mapNotNull { it.appWidgetId } +
+        return (model.items.flatMap { item ->
+            listOfNotNull(item.appWidgetId) + item.widgetStack.mapNotNull { it.appWidgetId }
+        } + model.feedCards.mapNotNull { it.appWidgetId } +
             listOfNotNull(searchBarWidget.takeIf { it != 0 })).toSet()
     }
 
     fun setWidgetId(itemId: String, appWidgetId: Int) = persist { repository.setWidgetId(itemId, appWidgetId) }
+
+    fun addWidgetToStack(
+        itemId: String,
+        appWidgetId: Int,
+        provider: String,
+        userSerial: Long = 0L
+    ) = persist { repository.addWidgetToStack(itemId, appWidgetId, provider, userSerial) }
+
+    fun setWidgetStackFront(itemId: String, frontIndex: Int) =
+        persist { repository.setWidgetStackFront(itemId, frontIndex) }
+
+    fun setWidgetStackMemberId(itemId: String, memberIndex: Int, appWidgetId: Int) =
+        persist { repository.setWidgetStackMemberId(itemId, memberIndex, appWidgetId) }
+
+    fun removeWidgetFromStack(itemId: String, memberFrontIndex: Int) =
+        persist { repository.removeWidgetFromStack(itemId, memberFrontIndex) }
 
     fun resizeWidget(
         itemId: String,

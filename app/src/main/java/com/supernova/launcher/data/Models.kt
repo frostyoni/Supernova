@@ -41,6 +41,14 @@ enum class ContainerType {
     FOLDER
 }
 
+// One member of a workspace widget stack. Defaults keep old JSON decoding.
+@Serializable
+data class WidgetStackMember(
+    val appWidgetId: Int? = null,
+    val provider: String = "",
+    val userSerial: Long = 0L
+)
+
 @Serializable
 data class LauncherItem(
     val id: String,
@@ -76,6 +84,11 @@ data class LauncherItem(
     // Widgets only, per-widget padding: this widget's inset in dp
     // inside its cells. Null follows the Widget padding setting.
     val widgetPadding: Int? = null,
+    // Widgets only: the additional widgets in a stack and which one is in front.
+    // widgetStackFront is 0 for the primary appWidgetId, or 1..n for
+    // widgetStack[index - 1]. Defaults keep pre-stack JSON intact.
+    val widgetStack: List<WidgetStackMember> = emptyList(),
+    val widgetStackFront: Int = 0,
     // Widgets only: cellX/cellY/spanX/spanY count half cells, for a widget
     // placed or sized with subgrid positioning on. WorkspaceGeometry.itemRect
     // reads it; nothing else should use those four fields raw.
