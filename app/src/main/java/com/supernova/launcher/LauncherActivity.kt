@@ -3547,6 +3547,18 @@ class LauncherActivity :
                     menu.addRow(getString(R.string.padding), R.drawable.ic_menu_padding) {
                         widgets.showPaddingDialog(item, anchor)
                     }
+                    if (item.appWidgetId != null &&
+                        item.widgetStack.size < LauncherRepository.MAX_WIDGET_STACK_MEMBERS
+                    ) {
+                        menu.addRow(getString(R.string.widget_add_to_stack), R.drawable.ic_menu_widgets) {
+                            widgets.showPickerForStack(item)
+                        }
+                    }
+                    if (item.widgetStack.isNotEmpty() && item.widgetStackFront > 0) {
+                        menu.addRow(getString(R.string.widget_remove_from_stack), R.drawable.ic_menu_remove_item) {
+                            removeStackMember(item)
+                        }
+                    }
                     // The quickmenu pair, for a widget that overlaps other
                     // items: which of them draws on top and takes the touch.
                     // Each row is offered only when it would change something.
@@ -3720,6 +3732,15 @@ class LauncherActivity :
     // A widget's host id is kept while the Undo bar shows, so Undo brings the
     // same widget back; it is deleted once the bar goes without an Undo.
     override fun removeItemWithUndo(item: LauncherItem) = removeItemWithUndo(item, null, null)
+
+    // Remove the currently-shown member of a widget stack, leaving the primary
+    // widget and resetting the front to 0.
+    private fun removeStackMember(item: LauncherItem) {
+        val front = item.widgetStackFront
+        val member = item.widgetStack.getOrNull(front - 1) ?: return
+        member.appWidgetId?.let(widgets::releaseWidgetId)
+        viewModel.removeWidgetFromStack(item.id, front)
+    }
 
     // `window` is a view in the window the bar shows in (null: the
     // activity's), as an open folder covers the activity's; `onUndo` is
