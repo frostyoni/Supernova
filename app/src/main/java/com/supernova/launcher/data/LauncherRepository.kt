@@ -855,12 +855,24 @@ class LauncherRepository(private val context: Context) {
     suspend fun writeAutoBackup(prefs: LauncherPrefs): Boolean = runLogged("write automatic backup") {
         val payload = exportBackup(prefs)
         autoBackupDir.mkdirs()
-        val written = File(autoBackupDir, "layout-${System.currentTimeMillis()}.json")
-        written.writeText(payload)
+        val stamp = System.currentTimeMillis()
+        val written = File(autoBackupDir, "layout-$stamp.json")
+        // Written aside and renamed when whole: a kill mid-write used to leave
+        // a truncated file that still listed as a restorable snapshot.
+        val partial = File(autoBackupDir, "layout-$stamp.part")
+        withContext(Dispatchers.IO) {
+            try {
+                partial.writeText(payload)
+                check(partial.renameTo(written)) { "couldn't finish the automatic backup" }
+            } catch (error: Throwable) {
+                partial.delete()
+                throw error
+            }
+        }
         // The newest by name are kept, but never at the cost of the one
         // just written: a clock set back names it older than the rest, and
         // the snapshot taken before a reset or an import must survive.
-        autoBackupDir.listFiles()
+        autoBackupDir.listFiles { file -> file.name.endsWith(".json") }
             ?.filter { it != written }
             ?.sortedByDescending { it.name }
             ?.drop(AUTO_BACKUP_KEEP - 1)
@@ -868,16 +880,17 @@ class LauncherRepository(private val context: Context) {
     }.isSuccess
 
     fun autoBackups(): List<File> =
-        autoBackupDir.listFiles()?.sortedByDescending { it.name }.orEmpty()
+        autoBackupDir.listFiles { file -> file.name.endsWith(".json") }
+            ?.sortedByDescending { it.name }.orEmpty()
 
-    suspend fun exportBackup(prefs: LauncherPrefs): String {
+    suspend fun exportBackup(prefs: LauncherPrefs): String = withContext(Dispatchers.IO) {
         val model = modelFlow.first()
         val payload = BackupPayload(
             exportedAtEpochMs = System.currentTimeMillis(),
             model = model,
             prefs = prefs
         )
-        return json.encodeToString(payload)
+        json.encodeToString(payload)
     }
 
     data class ImportResult(
@@ -989,10 +1002,12 @@ class LauncherRepository(private val context: Context) {
         // What is being replaced stays recoverable from Automatic backups, as
         // Reset's does: without that snapshot, no import. Written under the
         // lock, so no layout edit lands in between and is lost.
-        if (snapshotFirst) {
-            check(writeAutoBackup(currentPrefs)) { "couldn't save a backup of the current layout first" }
-        }
         lock.withLock {
+            // Under the lock, as the comment above has always said: a layout
+            // edit landing between the snapshot and the import was lost.
+            if (snapshotFirst) {
+                check(writeAutoBackup(currentPrefs)) { "couldn't save a backup of the current layout first" }
+            }
             context.supernovaStore.edit { prefs ->
                 prefs[StoreKeys.model] = json.encodeToString(validated)
                 LauncherPreferences.writeAll(prefs, restoredPrefs)
