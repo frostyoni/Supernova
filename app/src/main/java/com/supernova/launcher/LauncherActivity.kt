@@ -2882,8 +2882,8 @@ class LauncherActivity :
         return prefs.drawerRememberPosition
     }
 
-    private fun launchApp(app: LaunchableApp, anchor: View? = null) {
-        launchWithAnimation(anchor) { bounds, options ->
+    private fun launchApp(app: LaunchableApp, anchor: View? = null, nudge: Boolean = false) {
+        launchWithAnimation(anchor, nudge) { bounds, options ->
             runLogged("launch app") {
                 viewModel.appCatalog().launch(app, bounds, options)
             }.onSuccess {
@@ -2958,7 +2958,11 @@ class LauncherActivity :
     // with the icon's screen bounds and the transition's options, and says
     // whether it did. Circle and Adaptive icon play their launcher-side part
     // first (LaunchPrelude) and launch as it ends.
-    private fun launchWithAnimation(item: View?, launch: (Rect?, android.os.Bundle?) -> Boolean) {
+    private fun launchWithAnimation(
+        item: View?,
+        nudge: Boolean = false,
+        launch: (Rect?, android.os.Bundle?) -> Boolean
+    ) {
         // A tap while another launch's prelude plays.
         if (launchPrelude.isBusy) return
         val prefs = viewModel.state.value.prefs
@@ -2975,6 +2979,30 @@ class LauncherActivity :
         val bounds = anchor.screenRect()
         if (none != null) {
             launch(bounds, none)
+            return
+        }
+        if (nudge) {
+            // A swipe action's launch: a nod from the anchor, then the app
+            // scales up out of it. The chosen app animation stays for taps.
+            val snapshot = runLogged("draw launch icon") { anchor.drawToBitmap() }.getOrNull()
+            if (snapshot == null) {
+                launch(bounds, runLogged("build launch options") {
+                    launchOptions(LaunchAnimation.ZOOM, anchor)
+                }.getOrNull())
+                return
+            }
+            val root = IntArray(2).also { binding.root.getLocationOnScreen(it) }
+            val rect = android.graphics.RectF(bounds).apply { offset(-root[0].toFloat(), -root[1].toFloat()) }
+            item?.let {
+                it.isPressed = false
+                it.jumpDrawablesToCurrentState()
+            }
+            launchPrelude.nudge(anchor, rect, snapshot, Animations.factor(prefs)) { from ->
+                val scaleUp = android.app.ActivityOptions.makeScaleUpAnimation(
+                    binding.root, from.left, from.top, from.width(), from.height()
+                ).toBundle()
+                if (!launch(bounds, scaleUp)) launchPrelude.clear()
+            }
             return
         }
         val style = prefs.launchAnimation
@@ -3030,21 +3058,21 @@ class LauncherActivity :
             .makeCustomAnimation(this, R.anim.launch_slide_left_enter, R.anim.launch_slide_left_exit)
     }.toBundle()
 
-    private fun launchItem(item: LauncherItem, anchor: View? = null) {
+    private fun launchItem(item: LauncherItem, anchor: View? = null, nudge: Boolean = false) {
         when (item.itemType) {
             ItemType.FOLDER -> showFolderPopup(anchor ?: binding.root, item)
             ItemType.WIDGET -> Unit
-            ItemType.APP -> item.toLaunchableApp()?.let { launchApp(it, anchor) }
+            ItemType.APP -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge) }
             ItemType.SHORTCUT -> {
                 val uri = item.intentUri
                 when {
                     uri != null -> {
                         val action = com.supernova.launcher.gesture.ActionShortcut.decode(uri)
-                        if (action != null) actions.run(action, anchor) else launchIntentUri(uri, anchor)
+                        if (action != null) actions.run(action, anchor) else launchIntentUri(uri, anchor, nudge)
                     }
                     item.packageName != null && item.shortcutId != null ->
-                        launchShortcut(item.packageName, item.shortcutId, item.userSerial, anchor)
-                    else -> item.toLaunchableApp()?.let { launchApp(it, anchor) }
+                        launchShortcut(item.packageName, item.shortcutId, item.userSerial, anchor, nudge)
+                    else -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge) }
                 }
             }
         }
@@ -3110,7 +3138,8 @@ class LauncherActivity :
         packageName: String,
         shortcutId: String,
         userSerial: Long,
-        anchor: View? = null
+        anchor: View? = null,
+        nudge: Boolean = false
     ) {
         // A paused work app's shortcut can't start (an app itself gets the
         // system's own prompt): offer to turn work apps back on instead.
@@ -3120,7 +3149,7 @@ class LauncherActivity :
         }
         val launcherApps = getSystemService(LauncherApps::class.java) ?: return
         val user = viewModel.appCatalog().userForSerial(userSerial) ?: Process.myUserHandle()
-        launchWithAnimation(anchor) { bounds, options ->
+        launchWithAnimation(anchor, nudge) { bounds, options ->
             runLogged("launch shortcut") {
                 launcherApps.startShortcut(packageName, shortcutId, bounds, options, user)
             }.onSuccess {
@@ -3142,7 +3171,7 @@ class LauncherActivity :
 
     // Fires an arbitrary intent stored on an item (an activity chosen from the
     // picker, or a legacy created shortcut). Reuses the app-launch reveal.
-    private fun launchIntentUri(uri: String, anchor: View?) {
+    private fun launchIntentUri(uri: String, anchor: View?, nudge: Boolean = false) {
         val intent = runLogged("read intent item") { Intent.parseUri(uri, Intent.URI_INTENT_SCHEME) }.getOrNull()
         if (intent == null) {
             Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
@@ -3158,7 +3187,7 @@ class LauncherActivity :
             requestCallPermission.launch(android.Manifest.permission.CALL_PHONE)
             return
         }
-        launchWithAnimation(anchor) { bounds, options ->
+        launchWithAnimation(anchor, nudge) { bounds, options ->
             intent.sourceBounds = bounds
             runLogged("launch intent item") { startActivity(intent, options) }
                 .onSuccess { maybeAutoCloseDock() }
@@ -5090,13 +5119,13 @@ class LauncherActivity :
 
     // A folder's own swipe: the app at [index] in the order the folder shows.
     // A position it no longer has opens the folder, as the tap above does.
-    private fun launchFolderItem(folder: LauncherItem, index: Int, anchor: View?) {
+    private fun launchFolderItem(folder: LauncherItem, index: Int, anchor: View?, nudge: Boolean = false) {
         val member = viewModel.folderMembers(folder.id).getOrNull(index)
         if (member == null) {
             showFolderPopup(anchor ?: binding.root, folder)
             return
         }
-        launchItem(member, anchor)
+        launchItem(member, anchor, nudge)
     }
 
     private fun launchSwipeAction(item: LauncherItem, action: String?, label: String?, anchor: View? = null) {
@@ -5106,7 +5135,7 @@ class LauncherActivity :
         com.supernova.launcher.gesture.ActionShortcut.decode(action)?.let { binding ->
             if (binding.action == GestureAction.LAUNCH_FOLDER_ITEM) {
                 if (item.itemType == ItemType.FOLDER) {
-                    launchFolderItem(item, binding.payload?.toIntOrNull() ?: 0, anchor)
+                    launchFolderItem(item, binding.payload?.toIntOrNull() ?: 0, anchor, nudge = true)
                 }
                 return
             }
@@ -5115,7 +5144,7 @@ class LauncherActivity :
         }
         // An intent an app's shortcut screen made (a direct dial, a route).
         if (com.supernova.launcher.ui.CreatedShortcuts.isIntentUri(action)) {
-            launchIntentUri(action, null)
+            launchIntentUri(action, anchor, nudge = true)
             return
         }
         // Shortcut targets are stored "pkg|shortcutId"; anything else is a
