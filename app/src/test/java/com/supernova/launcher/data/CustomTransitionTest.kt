@@ -71,6 +71,17 @@ class CustomTransitionTest {
     }
 
     @Test
+    fun theExampleSettlesAtRest() {
+        // The incoming page must end upright and in place; the outgoing one
+        // gone, so the wrapper's reset at the neighbour slot is invisible.
+        val arriving = CustomTransition.example.sample(incomingLane = true, progress = 1f)
+        assertEquals(0f, arriving.moveX, 0.0001f)
+        assertEquals(0f, arriving.roll, 0.0001f)
+        assertEquals(1f, arriving.scale, 0.0001f)
+        assertEquals(0f, CustomTransition.example.sample(incomingLane = false, progress = 1f).alpha, 0.0001f)
+    }
+
+    @Test
     fun invalidSpecsAreRejected() {
         assertNull(CustomTransition.parse("{"))
         assertNull(
