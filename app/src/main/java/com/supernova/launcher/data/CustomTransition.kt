@@ -106,7 +106,10 @@ data class CustomTransition(
         val example = CustomTransition(
             name = "Nod",
             incoming = listOf(
-                Chip(0f, 0.75f, Channel.MOVE_X, 1f, 0f, Ease.EASE_OUT),
+                // No Move X here: the pager already slides the page in, and an
+                // offset that was 1w at the rest end snapped the page when it
+                // became the current one. The lane is an extra on top of that
+                // slide and must be identity at rest.
                 // Out and back, so the page is upright and at rest when it
                 // settles; a roll that only went out left a late correction.
                 Chip(0.2f, 0.45f, Channel.ROLL, 0f, 10f, Ease.EASE_OUT),
