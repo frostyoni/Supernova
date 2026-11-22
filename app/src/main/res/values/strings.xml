@@ -791,6 +791,12 @@
     <string name="custom_transition_builder_load">Load</string>
     <string name="custom_transition_builder_saved">Saved; it applies when the launcher is back</string>
     <string name="custom_transition_builder_no_chip">No chip selected</string>
+    <string name="custom_transition_builder_chip">Chip</string>
+    <string name="custom_transition_builder_channel">Channel</string>
+    <string name="custom_transition_builder_easing">Easing</string>
+    <string name="custom_transition_builder_stack">Stack</string>
+    <string name="custom_transition_builder_hint">Drag a chip to move it, an end to resize. The lanes are extras on top of the page slide and must be identity at rest.</string>
+    <string name="custom_transition_builder_values">X/Y: page widths · scale 1 normal · fade 0–1 · angles in degrees</string>
     <string name="custom_transition_builder_incoming">Incoming</string>
     <string name="custom_transition_builder_outgoing">Outgoing</string>
     <string name="custom_transition_builder_span">%1$s  %2$.2f → %3$.2f</string>
