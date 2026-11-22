@@ -1962,7 +1962,17 @@ object SettingsCatalogue {
                     },
                     onClick = { showCustomTransitionDialog(context, viewModel) },
                     look = SettingItem.RowLook(chevron = false)
-                ).describedBy(R.string.labs_custom_transition_summary)
+                ).describedBy(R.string.labs_custom_transition_summary),
+                SettingItem.Row(
+                    R.string.labs_custom_transition_builder,
+                    subtitle = { context.getString(R.string.labs_custom_transition_builder_summary) },
+                    onClick = {
+                        context.startActivity(
+                            Intent(context, com.supernova.launcher.ui.CustomTransitionBuilderActivity::class.java)
+                        )
+                    },
+                    look = SettingItem.RowLook(chevron = true)
+                ).describedBy(R.string.labs_custom_transition_builder_summary)
             )
         ),
         // Every access Supernova can ask for, each with its state; a tap
