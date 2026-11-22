@@ -2,6 +2,7 @@ package com.supernova.launcher.ui
 
 import android.view.View
 import androidx.viewpager2.widget.ViewPager2
+import com.supernova.launcher.data.CustomTransition
 import com.supernova.launcher.data.SettingEnumSerializer
 import kotlin.math.abs
 import kotlin.math.max
@@ -24,7 +25,9 @@ enum class ScrollEffect {
     GLASS,
     WIPE,
     ZOOM_FADE,
-    THROW;
+    THROW,
+    // A spec from Labs, not one of the fixed effects.
+    CUSTOM;
 
     // Its name in the store and in a backup, read back leniently.
     object Names : SettingEnumSerializer<ScrollEffect>("ScrollEffect", entries, NONE)
@@ -36,7 +39,10 @@ enum class ScrollEffect {
 
 object PageTransformers {
 
-    fun forEffect(effect: ScrollEffect): ViewPager2.PageTransformer? {
+    fun forEffect(
+        effect: ScrollEffect,
+        custom: CustomTransition? = null
+    ): ViewPager2.PageTransformer? {
         val transform: (View, Float) -> Unit = when (effect) {
             ScrollEffect.NONE -> return null
             ScrollEffect.SIMPLE -> ::simple
@@ -54,6 +60,7 @@ object PageTransformers {
             ScrollEffect.WIPE -> ::wipe
             ScrollEffect.ZOOM_FADE -> ::zoomFade
             ScrollEffect.THROW -> ::throwAway
+            ScrollEffect.CUSTOM -> { page, position -> applyCustom(page, position, custom) }
         }
         return ViewPager2.PageTransformer { page, position ->
             // A page a whole page or more away is out of view in a plain
@@ -78,6 +85,34 @@ object PageTransformers {
                 transform(page, position)
             }
         }
+    }
+
+    // A Labs spec's frame, plus the invariant every page needs: it fades to
+    // nothing by the neighbour slot, where the wrapper resets it, so a spec
+    // that leaves its outgoing page visible does not snap away.
+    private fun applyCustom(page: View, position: Float, spec: CustomTransition?) {
+        if (spec == null) {
+            simple(page, position)
+            return
+        }
+        val time = abs(position).coerceIn(0f, 1f)
+        if (time <= 0f) {
+            resetTransforms(page)
+            page.alpha = 1f
+            return
+        }
+        val frame = spec.sample(incomingLane = position > 0f, progress = time)
+        page.translationX = frame.moveX * page.width
+        page.translationY = frame.moveY * page.height
+        page.translationZ = 0f
+        page.scaleX = frame.scale
+        page.scaleY = frame.scale
+        page.rotation = frame.roll
+        page.rotationX = frame.pitch
+        page.rotationY = frame.yaw
+        page.pivotX = page.width / 2f
+        page.pivotY = page.height / 2f
+        page.alpha = (frame.alpha * (1f - time)).coerceIn(0f, 1f)
     }
 
     // Transformers only restore what they themselves mutate; call this on the

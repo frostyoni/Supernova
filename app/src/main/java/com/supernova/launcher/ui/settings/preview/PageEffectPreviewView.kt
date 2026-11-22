@@ -69,7 +69,16 @@ class PageEffectPreviewView(
             (pager.getChildAt(0) as? RecyclerView)?.let { recycler ->
                 for (index in 0 until recycler.childCount) PageTransformers.resetTransforms(recycler.getChildAt(index))
             }
-            pager.setPageTransformer(PageTransformers.forEffect(effect))
+            pager.setPageTransformer(
+                PageTransformers.forEffect(
+                    effect,
+                    if (effect == ScrollEffect.CUSTOM) {
+                        com.supernova.launcher.ui.CustomTransitionStore.load(context)
+                    } else {
+                        null
+                    }
+                )
+            )
         }
         replay()
     }

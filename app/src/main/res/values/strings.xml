@@ -683,6 +683,7 @@
     <string name="effect_wipe">Wipe</string>
     <string name="effect_zoom_fade">Zoom fade</string>
     <string name="effect_throw">Throw</string>
+    <string name="effect_custom">Custom (Labs)</string>
 
     <string name="stepper_decrease">Decrease</string>
     <string name="stepper_increase">Increase</string>
@@ -765,6 +766,12 @@
         <item quantity="other">Exported %d icons</item>
     </plurals>
     <string name="labs_clear_icon_cache">Clear icon cache</string>
+    <string name="labs_custom_transition">Custom page transition</string>
+    <string name="labs_custom_transition_summary">Paste or edit a JSON timeline; saving also selects Custom (Labs)</string>
+    <string name="labs_custom_transition_saved">Custom transition saved</string>
+    <string name="labs_custom_transition_invalid">That is not a valid transition spec</string>
+    <string name="labs_custom_transition_share">Share transition</string>
+    <string name="labs_custom_transition_named">Saved: %1$s</string>
     <string name="permissions">Permissions</string>
     <string name="section_permissions_subtitle">Contacts, calendar, notification access and more</string>
     <string name="permission_contacts">Contacts</string>

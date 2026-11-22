@@ -378,6 +378,7 @@ object EnumLabels {
         ScrollEffect.WIPE -> R.string.effect_wipe
         ScrollEffect.ZOOM_FADE -> R.string.effect_zoom_fade
         ScrollEffect.THROW -> R.string.effect_throw
+        ScrollEffect.CUSTOM -> R.string.effect_custom
     }
 
     @StringRes

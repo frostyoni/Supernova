@@ -1038,6 +1038,16 @@ class LauncherActivity :
         // open is one they came back to, not one parked behind an app.
         drawerKeptBehindLaunch = false
         reopenDockIfAutoClosed()
+        // A Labs custom transition may have been edited while Settings was
+        // in front; its spec is not in the prefs, so re-read it here even
+        // when the effect's own name did not change.
+        if (::binding.isInitialized) {
+            val prefs = viewModel.state.value.prefs
+            applyScrollEffect(
+                if (Animations.pageEffects(prefs)) prefs.scrollEffect else ScrollEffect.NONE,
+                force = true
+            )
+        }
     }
 
     override fun onPause() {
@@ -1972,8 +1982,8 @@ class LauncherActivity :
         }
     }
 
-    private fun applyScrollEffect(effect: ScrollEffect) {
-        if (effect == appliedScrollEffect) return
+    private fun applyScrollEffect(effect: ScrollEffect, force: Boolean = false) {
+        if (!force && effect == appliedScrollEffect) return
         appliedScrollEffect = effect
         // Transformers only reset the properties they mutate, so the previous
         // effect's leftovers (rotation, alpha, ...) must be cleared by hand.
@@ -1982,7 +1992,14 @@ class LauncherActivity :
                 PageTransformers.resetTransforms(recycler.getChildAt(index))
             }
         }
-        binding.workspacePager.setPageTransformer(PageTransformers.forEffect(effect))
+        // A Labs spec lives outside the prefs, so it is read when the effect
+        // is applied rather than cached with the enum.
+        val custom = if (effect == ScrollEffect.CUSTOM) {
+            com.supernova.launcher.ui.CustomTransitionStore.load(this)
+        } else {
+            null
+        }
+        binding.workspacePager.setPageTransformer(PageTransformers.forEffect(effect, custom))
     }
 
     // Status bar visibility/icon tint, nav bar transparency and rotation
