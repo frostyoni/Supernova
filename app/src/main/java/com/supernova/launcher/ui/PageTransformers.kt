@@ -309,7 +309,10 @@ object PageTransformers {
             // dims hard, so the incoming clearly lands on top of it.
             page.translationX = position * page.width * (PUSH_SHIFT - 1f)
             page.translationZ = 0f
-            page.alpha = (1f + position * PUSH_DIM).coerceIn(0f, 1f)
+            // Fade all the way out by the neighbour slot: the wrapper resets
+            // a page there, and a still-visible page snapped away. Its fade
+            // and the dim are the same curve now.
+            page.alpha = (1f + position).coerceIn(0f, 1f)
             page.scaleX = 1f + position * PUSH_SHRINK
             page.scaleY = page.scaleX
         }
@@ -331,7 +334,8 @@ object PageTransformers {
             // unlike the push, which shrinks and darkens it.
             page.translationX = position * page.width * (PARALLAX_RATE - 1f)
             page.translationZ = 0f
-            page.alpha = 1f
+            // Gone by the neighbour slot, for the same reason as Push.
+            page.alpha = (1f + position).coerceIn(0f, 1f)
             page.scaleX = 1f - position * PARALLAX_GROW
             page.scaleY = page.scaleX
         }
@@ -362,7 +366,6 @@ object PageTransformers {
     private const val THROW_LIFT = 0.7f
     private const val THROW_ROTATION = 20f
     private const val PUSH_SHIFT = 0.2f
-    private const val PUSH_DIM = 0.55f
     private const val PUSH_SHRINK = 0.06f
     private const val PARALLAX_RATE = 0.45f
     private const val PARALLAX_LAG = 0.15f
