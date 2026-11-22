@@ -188,7 +188,14 @@ class TransitionTimelineView(context: Context) : View(context) {
                 if (selected == Selection(incoming, index)) {
                     canvas.drawRoundRect(rect, 6f * density, 6f * density, stroke)
                 }
-                val title = title(chip)
+                val name = title(chip)
+                // Narrow chips show the channel only; the inspector has the
+                // numbers, so the label never has to be cut mid-number.
+                val title = if (rect.width() >= 86f * density) {
+                    String.format(Locale.US, "%s %.2f→%.2f", name, chip.from, chip.value)
+                } else {
+                    name
+                }
                 val available = rect.width() - 10f * density
                 if (available > 8f * density) {
                     canvas.save()
@@ -277,7 +284,7 @@ class TransitionTimelineView(context: Context) : View(context) {
             CustomTransition.Channel.PITCH -> "pitch"
             CustomTransition.Channel.YAW -> "yaw"
         }
-        return String.format(Locale.US, "%s %.2f→%.2f", name, chip.from, chip.value)
+        return name
     }
 
     private companion object {

@@ -19,7 +19,7 @@ import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.PopupMenu
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -80,23 +80,34 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             isAppearanceLightNavigationBars = !night
         }
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        // A scroll view, so the keyboard (and a short landscape view) can
+        // bring the fields into sight instead of covering them.
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
             setBackgroundColor(surface)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
         }
-        val base = arrayOf(root.paddingLeft, root.paddingTop, root.paddingRight, root.paddingBottom)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(
+            root,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
-            view.setPadding(base[0] + bars.left, base[1] + bars.top, base[2] + bars.right, base[3] + bars.bottom)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            view.setPadding(
+                bars.left + dp(16), bars.top + dp(16), bars.right + dp(16),
+                maxOf(bars.bottom, ime) + dp(16)
+            )
             insets
         }
-        setContentView(root)
+        setContentView(scroll)
 
         root.addView(buildTopBar(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
-        root.addView(buildPreview(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(210)))
+        root.addView(hint(getString(R.string.custom_transition_builder_hint)), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(buildActions(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(buildPreview(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(180)))
         timeline = TransitionTimelineView(this).apply {
             setPadding(0, dp(8), 0, dp(8))
             onChanged = { syncFromTimeline() }
@@ -123,30 +134,45 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             text = getString(R.string.save)
             setOnClickListener { save() }
         })
-        bar.addView(MaterialButton(this).apply {
-            text = "⋮"
-            setOnClickListener { showOverflow(this) }
-        })
         return bar
     }
 
-    private fun showOverflow(anchor: View) {
-        val menu = PopupMenu(this, anchor)
-        val shareItem = menu.menu.add(R.string.labs_custom_transition_share)
-        val importItem = menu.menu.add(R.string.custom_transition_builder_import)
-        val exampleItem = menu.menu.add(R.string.custom_transition_builder_example)
-        val resetItem = menu.menu.add(R.string.custom_transition_builder_reset)
-        menu.setOnMenuItemClickListener { item ->
-            when (item) {
-                shareItem -> share()
-                importItem -> importDialog()
-                exampleItem -> loadExample()
-                resetItem -> resetSpec()
-                else -> return@setOnMenuItemClickListener false
-            }
-            true
+
+    private fun buildActions(): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(8))
         }
-        menu.show()
+        listOf(
+            getString(R.string.custom_transition_builder_example) to { loadExample() },
+            getString(R.string.custom_transition_builder_import) to { importDialog() },
+            getString(R.string.labs_custom_transition_share) to { share() },
+            getString(R.string.custom_transition_builder_reset) to { resetSpec() }
+        ).forEach { (text, action) ->
+            row.addView(
+                button(text, action).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            )
+        }
+        return row
+    }
+
+    private fun hint(text: String): TextView = TextView(this).apply {
+        this.text = text
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        setTextColor(ContextCompat.getColor(this@CustomTransitionBuilderActivity, R.color.textSecondary))
+        setPadding(0, dp(4), 0, dp(8))
+    }
+
+    private fun labelled(label: String, field: View): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(TextView(this@CustomTransitionBuilderActivity).apply {
+            text = label
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(ContextCompat.getColor(this@CustomTransitionBuilderActivity, R.color.textSecondary))
+        })
+        addView(field, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
     private fun buildPreview(): View {
@@ -170,35 +196,74 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, 0)
         }
+        column.addView(TextView(this).apply {
+            text = getString(R.string.custom_transition_builder_chip)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(typeface, Typeface.BOLD)
+        })
         atTo = TextView(this).apply {
-            setPadding(0, dp(4), 0, dp(8))
+            setPadding(0, dp(2), 0, dp(8))
             text = getString(R.string.custom_transition_builder_no_chip)
         }
         column.addView(atTo)
 
         channel = spinner(channels.map { channelName(it) })
         ease = spinner(eases.map { easeName(it) })
-        column.addView(halfRow(listOf(channel, ease)))
+        column.addView(
+            halfRow(
+                listOf(
+                    labelled(getString(R.string.custom_transition_builder_channel), channel),
+                    labelled(getString(R.string.custom_transition_builder_easing), ease)
+                )
+            )
+        )
 
-        fromField = numberField(getString(R.string.custom_transition_builder_from))
-        valueField = numberField(getString(R.string.custom_transition_builder_value))
+        fromField = numberField()
+        valueField = numberField()
         addBox = CheckBox(this).apply { text = getString(R.string.custom_transition_builder_add) }
-        column.addView(halfRow(listOf(fromField, valueField, addBox)))
+        column.addView(
+            halfRow(
+                listOf(
+                    labelled(getString(R.string.custom_transition_builder_from), fromField),
+                    labelled(getString(R.string.custom_transition_builder_value), valueField),
+                    labelled(getString(R.string.custom_transition_builder_stack), addBox)
+                )
+            )
+        )
+        column.addView(hint(getString(R.string.custom_transition_builder_values)))
 
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, 0)
         }
-        buttons.addView(button(getString(R.string.custom_transition_builder_add_chip)) { addChip() })
-        buttons.addView(button(getString(R.string.custom_transition_builder_duplicate)) { duplicate() })
-        buttons.addView(button(getString(R.string.custom_transition_builder_delete)) { delete() })
-        column.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        listOf(
+            getString(R.string.custom_transition_builder_add_chip) to { addChip() },
+            getString(R.string.custom_transition_builder_duplicate) to { duplicate() },
+            getString(R.string.custom_transition_builder_delete) to { delete() }
+        ).forEach { (text, action) ->
+            buttons.addView(
+                button(text, action).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            )
+        }
+        column.addView(buttons)
 
         channel.onItemSelectedListener = listener { if (!populating) updateSelected { it.copy(channel = channels[channel.selectedItemPosition]) } }
         ease.onItemSelectedListener = listener { if (!populating) updateSelected { it.copy(ease = eases[ease.selectedItemPosition]) } }
         fromField.doAfterTextChanged { if (!populating) fromField.text?.toString()?.toFloatOrNull()?.let { value -> updateSelected { it.copy(from = value) } } }
         valueField.doAfterTextChanged { if (!populating) valueField.text?.toString()?.toFloatOrNull()?.let { value -> updateSelected { it.copy(value = value) } } }
         addBox.setOnCheckedChangeListener { _, checked -> if (!populating) updateSelected { it.copy(add = checked) } }
+        listOf(fromField, valueField).forEach { field ->
+            field.setOnFocusChangeListener { view, focused ->
+                if (focused) view.post {
+                    view.requestRectangleOnScreen(
+                        android.graphics.Rect(0, 0, view.width, view.height),
+                        true
+                    )
+                }
+            }
+        }
         return column
     }
 
@@ -215,8 +280,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
         override fun onNothingSelected(parent: AdapterView<*>?) = Unit
     }
 
-    private fun numberField(hint: String): AppCompatEditText = AppCompatEditText(this).apply {
-        this.hint = hint
+    private fun numberField(): AppCompatEditText = AppCompatEditText(this).apply {
         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or
             InputType.TYPE_NUMBER_FLAG_SIGNED
         imeOptions = EditorInfo.IME_ACTION_DONE
