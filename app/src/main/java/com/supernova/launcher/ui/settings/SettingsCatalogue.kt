@@ -1,18 +1,24 @@
 package com.supernova.launcher.ui.settings
 
 import androidx.core.graphics.toColorInt
+import androidx.appcompat.widget.AppCompatEditText
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import com.supernova.launcher.R
 import com.supernova.launcher.SupernovaApp
 import com.supernova.launcher.data.IconGlass
 import com.supernova.launcher.data.IconShape
 import com.supernova.launcher.data.LauncherPrefs
+import com.supernova.launcher.data.CustomTransition
 import com.supernova.launcher.data.LockMethod
 import com.supernova.launcher.data.Pref
 import com.supernova.launcher.data.SearchWindowMode
 import kotlin.math.roundToInt
 import com.supernova.launcher.ui.BadgePosition
 import com.supernova.launcher.ui.BadgeStyle
+import com.supernova.launcher.ui.CustomTransitionStore
 import com.supernova.launcher.ui.DockBgStyle
 import com.supernova.launcher.ui.FolderPreviewStyle
 import androidx.annotation.StringRes
@@ -1946,7 +1952,17 @@ object SettingsCatalogue {
                     subtitle = { context.getString(R.string.labs_clear_icon_cache_summary) },
                     onClick = actions.clearIconCache,
                     look = SettingItem.RowLook(chevron = false)
-                ).describedBy(R.string.labs_clear_icon_cache_summary)
+                ).describedBy(R.string.labs_clear_icon_cache_summary),
+                SettingItem.Row(
+                    R.string.labs_custom_transition,
+                    subtitle = {
+                        CustomTransitionStore.load(context)?.let {
+                            context.getString(R.string.labs_custom_transition_named, it.name)
+                        } ?: context.getString(R.string.labs_custom_transition_summary)
+                    },
+                    onClick = { showCustomTransitionDialog(context, viewModel) },
+                    look = SettingItem.RowLook(chevron = false)
+                ).describedBy(R.string.labs_custom_transition_summary)
             )
         ),
         // Every access Supernova can ask for, each with its state; a tap
@@ -2152,6 +2168,48 @@ object SettingsCatalogue {
         }
         return label ?: context.getString(R.string.card_untitled)
     }
+
+    // Labs: a transition spec pasted as JSON, with the example ready when
+    // nothing is saved. Saving selects Custom (Labs) for the home pager; the
+    // spec itself is read when the effect is applied (and on resume).
+    private fun showCustomTransitionDialog(context: Context, viewModel: LauncherViewModel) {
+        val density = context.resources.displayMetrics.density
+        val edit = AppCompatEditText(context).apply {
+            setText(CustomTransitionStore.raw(context) ?: CustomTransition.encode(CustomTransition.example))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(
+                (16 * density).toInt(), (8 * density).toInt(),
+                (16 * density).toInt(), (8 * density).toInt()
+            )
+            minLines = 10
+            maxLines = 18
+        }
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.labs_custom_transition)
+            .setView(edit)
+            .setPositiveButton(R.string.save) { _, _ ->
+                if (CustomTransitionStore.save(context, edit.text?.toString().orEmpty())) {
+                    viewModel.set(Pref.scrollEffect, ScrollEffect.CUSTOM)
+                    Toast.makeText(context, R.string.labs_custom_transition_saved, Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, R.string.labs_custom_transition_invalid, Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNeutralButton(R.string.labs_custom_transition_share) { _, _ ->
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, edit.text?.toString().orEmpty())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(
+                    Intent.createChooser(send, context.getString(R.string.labs_custom_transition_share))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 }
 
 // What brings back a row its page hides, for the settings search's hint
@@ -2220,4 +2278,5 @@ internal object SearchBarPrefs {
         val full = SearchBarConfig.decode(prefs.searchBarConfig)
         return prefs.copy(searchBarConfig = full.copy(drawer = change(full.drawer)).encode())
     }
+
 }

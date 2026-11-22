@@ -384,6 +384,7 @@ object EnumLabels {
         ScrollEffect.PUSH -> R.string.effect_push
         ScrollEffect.PARALLAX -> R.string.effect_parallax
         ScrollEffect.SWING -> R.string.effect_swing
+        ScrollEffect.CUSTOM -> R.string.effect_custom
     }
 
     @StringRes

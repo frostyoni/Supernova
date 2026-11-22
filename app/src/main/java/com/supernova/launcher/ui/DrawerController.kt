@@ -2313,7 +2313,18 @@ class DrawerController(
         applyListVisibility()
         placeListHeader()
         binding.drawerPager.setPageTransformer(
-            if (paged) PageTransformers.forEffect(prefs.drawerPageEffect) else null
+            if (paged) {
+                PageTransformers.forEffect(
+                    prefs.drawerPageEffect,
+                    if (prefs.drawerPageEffect == ScrollEffect.CUSTOM) {
+                        CustomTransitionStore.load(context)
+                    } else {
+                        null
+                    }
+                )
+            } else {
+                null
+            }
         )
         syncPages()
         adapter.notifyDataSetChanged()
