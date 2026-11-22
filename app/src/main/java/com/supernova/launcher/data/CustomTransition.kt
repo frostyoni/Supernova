@@ -106,14 +106,17 @@ data class CustomTransition(
         val example = CustomTransition(
             name = "Nod",
             incoming = listOf(
-                Chip(0f, 0.7f, Channel.MOVE_X, 1f, 0f, Ease.EASE_OUT),
-                Chip(0.25f, 0.55f, Channel.ROLL, 0f, 12f, Ease.EASE_OUT),
-                Chip(0.5f, 0.65f, Channel.SCALE, 1f, 1.06f, Ease.EASE_OUT),
-                Chip(0.65f, 0.85f, Channel.SCALE, 1.06f, 1f, Ease.EASE_IN_OUT)
+                Chip(0f, 0.75f, Channel.MOVE_X, 1f, 0f, Ease.EASE_OUT),
+                // Out and back, so the page is upright and at rest when it
+                // settles; a roll that only went out left a late correction.
+                Chip(0.2f, 0.45f, Channel.ROLL, 0f, 10f, Ease.EASE_OUT),
+                Chip(0.45f, 0.8f, Channel.ROLL, 10f, 0f, Ease.EASE_IN_OUT),
+                Chip(0.35f, 0.55f, Channel.SCALE, 1f, 1.04f, Ease.EASE_OUT),
+                Chip(0.55f, 0.8f, Channel.SCALE, 1.04f, 1f, Ease.EASE_IN_OUT)
             ),
             outgoing = listOf(
-                Chip(0.3f, 1f, Channel.ALPHA, 1f, 0f, Ease.EASE_IN),
-                Chip(0f, 0.6f, Channel.MOVE_X, 0f, -0.2f, Ease.EASE_OUT)
+                Chip(0.35f, 1f, Channel.ALPHA, 1f, 0f, Ease.EASE_IN),
+                Chip(0f, 0.55f, Channel.MOVE_X, 0f, -0.15f, Ease.EASE_OUT)
             )
         )
 

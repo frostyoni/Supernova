@@ -101,7 +101,8 @@ object PageTransformers {
             page.alpha = 1f
             return
         }
-        val frame = spec.sample(incomingLane = position > 0f, progress = time)
+        val incomingLane = position > 0f
+        val frame = spec.sample(incomingLane = incomingLane, progress = time)
         page.translationX = frame.moveX * page.width
         page.translationY = frame.moveY * page.height
         page.translationZ = 0f
@@ -112,7 +113,11 @@ object PageTransformers {
         page.rotationY = frame.yaw
         page.pivotX = page.width / 2f
         page.pivotY = page.height / 2f
-        page.alpha = (frame.alpha * (1f - time)).coerceIn(0f, 1f)
+        // Only the page leaving has to be gone by the neighbour slot: it can
+        // still be on screen there, and the wrapper resets it. The incoming
+        // page is off screen at that distance, so fading it as well just
+        // made the arriving page wash out.
+        page.alpha = (if (incomingLane) frame.alpha else frame.alpha * (1f - time)).coerceIn(0f, 1f)
     }
 
     // Transformers only restore what they themselves mutate; call this on the
