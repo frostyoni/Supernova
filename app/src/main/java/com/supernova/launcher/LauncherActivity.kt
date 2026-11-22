@@ -2899,8 +2899,13 @@ class LauncherActivity :
         return prefs.drawerRememberPosition
     }
 
-    private fun launchApp(app: LaunchableApp, anchor: View? = null, nudge: Boolean = false) {
-        launchWithAnimation(anchor, nudge) { bounds, options ->
+    private fun launchApp(
+        app: LaunchableApp,
+        anchor: View? = null,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
+        launchWithAnimation(anchor, nudge, nudgeUp) { bounds, options ->
             runLogged("launch app") {
                 viewModel.appCatalog().launch(app, bounds, options)
             }.onSuccess {
@@ -2978,6 +2983,7 @@ class LauncherActivity :
     private fun launchWithAnimation(
         item: View?,
         nudge: Boolean = false,
+        nudgeUp: Boolean = true,
         launch: (Rect?, android.os.Bundle?) -> Boolean
     ) {
         // A tap while another launch's prelude plays.
@@ -3014,7 +3020,7 @@ class LauncherActivity :
                 it.isPressed = false
                 it.jumpDrawablesToCurrentState()
             }
-            launchPrelude.nudge(anchor, rect, snapshot, Animations.factor(prefs)) { from ->
+            launchPrelude.nudge(anchor, rect, snapshot, Animations.factor(prefs), nudgeUp) { from ->
                 val scaleUp = android.app.ActivityOptions.makeScaleUpAnimation(
                     binding.root, from.left, from.top, from.width(), from.height()
                 ).toBundle()
@@ -3075,21 +3081,26 @@ class LauncherActivity :
             .makeCustomAnimation(this, R.anim.launch_slide_left_enter, R.anim.launch_slide_left_exit)
     }.toBundle()
 
-    private fun launchItem(item: LauncherItem, anchor: View? = null, nudge: Boolean = false) {
+    private fun launchItem(
+        item: LauncherItem,
+        anchor: View? = null,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
         when (item.itemType) {
             ItemType.FOLDER -> showFolderPopup(anchor ?: binding.root, item)
             ItemType.WIDGET -> Unit
-            ItemType.APP -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge) }
+            ItemType.APP -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge, nudgeUp) }
             ItemType.SHORTCUT -> {
                 val uri = item.intentUri
                 when {
                     uri != null -> {
                         val action = com.supernova.launcher.gesture.ActionShortcut.decode(uri)
-                        if (action != null) actions.run(action, anchor) else launchIntentUri(uri, anchor, nudge)
+                        if (action != null) actions.run(action, anchor) else launchIntentUri(uri, anchor, nudge, nudgeUp)
                     }
                     item.packageName != null && item.shortcutId != null ->
-                        launchShortcut(item.packageName, item.shortcutId, item.userSerial, anchor, nudge)
-                    else -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge) }
+                        launchShortcut(item.packageName, item.shortcutId, item.userSerial, anchor, nudge, nudgeUp)
+                    else -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge, nudgeUp) }
                 }
             }
         }
@@ -3156,7 +3167,8 @@ class LauncherActivity :
         shortcutId: String,
         userSerial: Long,
         anchor: View? = null,
-        nudge: Boolean = false
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
     ) {
         // A paused work app's shortcut can't start (an app itself gets the
         // system's own prompt): offer to turn work apps back on instead.
@@ -3166,7 +3178,7 @@ class LauncherActivity :
         }
         val launcherApps = getSystemService(LauncherApps::class.java) ?: return
         val user = viewModel.appCatalog().userForSerial(userSerial) ?: Process.myUserHandle()
-        launchWithAnimation(anchor, nudge) { bounds, options ->
+        launchWithAnimation(anchor, nudge, nudgeUp) { bounds, options ->
             runLogged("launch shortcut") {
                 launcherApps.startShortcut(packageName, shortcutId, bounds, options, user)
             }.onSuccess {
@@ -3188,7 +3200,12 @@ class LauncherActivity :
 
     // Fires an arbitrary intent stored on an item (an activity chosen from the
     // picker, or a legacy created shortcut). Reuses the app-launch reveal.
-    private fun launchIntentUri(uri: String, anchor: View?, nudge: Boolean = false) {
+    private fun launchIntentUri(
+        uri: String,
+        anchor: View?,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
         val intent = runLogged("read intent item") { Intent.parseUri(uri, Intent.URI_INTENT_SCHEME) }.getOrNull()
         if (intent == null) {
             Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
@@ -3204,7 +3221,7 @@ class LauncherActivity :
             requestCallPermission.launch(android.Manifest.permission.CALL_PHONE)
             return
         }
-        launchWithAnimation(anchor, nudge) { bounds, options ->
+        launchWithAnimation(anchor, nudge, nudgeUp) { bounds, options ->
             intent.sourceBounds = bounds
             runLogged("launch intent item") { startActivity(intent, options) }
                 .onSuccess { maybeAutoCloseDock() }
@@ -5123,8 +5140,8 @@ class LauncherActivity :
         inFolder?.invoke()
         when {
             up && opensOnSwipe -> showFolderPopup(v, item)
-            up -> launchSwipeAction(item, item.swipeAction, item.swipeLabel, v)
-            else -> launchSwipeAction(item, item.swipeActionDown, item.swipeLabelDown, v)
+            up -> launchSwipeAction(item, item.swipeAction, item.swipeLabel, v, nudgeUp = true)
+            else -> launchSwipeAction(item, item.swipeActionDown, item.swipeLabelDown, v, nudgeUp = false)
         }
     }
 
@@ -5136,23 +5153,38 @@ class LauncherActivity :
 
     // A folder's own swipe: the app at [index] in the order the folder shows.
     // A position it no longer has opens the folder, as the tap above does.
-    private fun launchFolderItem(folder: LauncherItem, index: Int, anchor: View?, nudge: Boolean = false) {
+    private fun launchFolderItem(
+        folder: LauncherItem,
+        index: Int,
+        anchor: View?,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
         val member = viewModel.folderMembers(folder.id).getOrNull(index)
         if (member == null) {
             showFolderPopup(anchor ?: binding.root, folder)
             return
         }
-        launchItem(member, anchor, nudge)
+        launchItem(member, anchor, nudge, nudgeUp)
     }
 
-    private fun launchSwipeAction(item: LauncherItem, action: String?, label: String?, anchor: View? = null) {
+    private fun launchSwipeAction(
+        item: LauncherItem,
+        action: String?,
+        label: String?,
+        anchor: View? = null,
+        nudgeUp: Boolean = true
+    ) {
         action ?: return
         // A launcher-action uri runs through the shared action dispatcher;
         // a folder's position actions are resolved against the icon itself.
         com.supernova.launcher.gesture.ActionShortcut.decode(action)?.let { binding ->
             if (binding.action == GestureAction.LAUNCH_FOLDER_ITEM) {
                 if (item.itemType == ItemType.FOLDER) {
-                    launchFolderItem(item, binding.payload?.toIntOrNull() ?: 0, anchor, nudge = true)
+                    launchFolderItem(
+                        item, binding.payload?.toIntOrNull() ?: 0, anchor,
+                        nudge = true, nudgeUp = nudgeUp
+                    )
                 }
                 return
             }
@@ -5161,7 +5193,7 @@ class LauncherActivity :
         }
         // An intent an app's shortcut screen made (a direct dial, a route).
         if (com.supernova.launcher.ui.CreatedShortcuts.isIntentUri(action)) {
-            launchIntentUri(action, anchor, nudge = true)
+            launchIntentUri(action, anchor, nudge = true, nudgeUp = nudgeUp)
             return
         }
         // Shortcut targets are stored "pkg|shortcutId"; anything else is a

@@ -153,6 +153,7 @@ class LaunchPrelude(private val root: ViewGroup) {
         iconRect: RectF,
         snapshot: Bitmap,
         speed: Float,
+        upward: Boolean,
         onHandOff: (Rect) -> Unit
     ) {
         clear()
@@ -165,15 +166,16 @@ class LaunchPrelude(private val root: ViewGroup) {
         launched = false
         val density = root.resources.displayMetrics.density
         val rise = NUDGE_RISE_DP * density
+        val direction = if (upward) -1f else 1f
         val bounds = Rect()
         fun place(fraction: Float) {
-            // Rise and grow on a decelerating curve, fade on an accelerating
-            // one; the hand-off happens while there is still a little icon to
-            // scale the app out of.
-            val moved = 1f - (1f - fraction) * (1f - fraction)
+            // Smoothstep in and out, so the icon leaves and arrives softly;
+            // the fade is still late, so it reads as the icon being taken by
+            // the app rather than dissolving.
+            val moved = fraction * fraction * (3f - 2f * fraction)
             val grow = 1f + NUDGE_SCALE * moved
             val centerX = iconRect.centerX()
-            val centerY = iconRect.centerY() - rise * moved
+            val centerY = iconRect.centerY() + direction * rise * moved
             val halfWidth = iconRect.width() * grow / 2f
             val halfHeight = iconRect.height() * grow / 2f
             bounds.set(
@@ -192,6 +194,10 @@ class LaunchPrelude(private val root: ViewGroup) {
                 place(fraction)
                 if (!launched && 1f - fraction * fraction <= NUDGE_HAND_OFF_ALPHA) {
                     launched = true
+                    // Taken off the overlay the moment the app starts: left
+                    // fading under the scaling app, it read as a ghost.
+                    floating?.let { root.overlay.remove(it) }
+                    floating = null
                     onHandOff(Rect(bounds))
                 }
             }
@@ -270,9 +276,9 @@ class LaunchPrelude(private val root: ViewGroup) {
         // the launcher.
         const val COVER_HOLD_MS = 1000L
         // The swipe launch's nod: a short rise, a touch of growth, a fade.
-        const val NUDGE_MS = 150f
-        const val NUDGE_RISE_DP = 12f
-        const val NUDGE_SCALE = 0.10f
+        const val NUDGE_MS = 190f
+        const val NUDGE_RISE_DP = 9f
+        const val NUDGE_SCALE = 0.07f
         const val NUDGE_HAND_OFF_ALPHA = 0.20f
         // Launcher3's AGGRESSIVE_EASE and EXAGGERATED_EASE.
         val AGGRESSIVE_EASE = PathInterpolator(0.2f, 0f, 0f, 1f)
