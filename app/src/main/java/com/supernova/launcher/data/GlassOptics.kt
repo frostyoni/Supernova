@@ -67,70 +67,62 @@ uniform float dispersion;
 uniform float backdropMix;
 uniform float alpha;
 
-float slab(float2 p, float2 half, float r) {
-    float2 q = abs(p) - half + r;
+// 'half' is a type name in AGSL, so the half-extent is b.
+float slab(float2 p, float2 b, float r) {
+    float2 q = abs(p) - b + r;
     return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - r;
 }
 
-half3 tap(float2 uv) {
-    return backdrop.eval(clamp(uv, float2(0.5), size - 0.5)).rgb;
+float3 tap(float2 uv) {
+    return float3(backdrop.eval(clamp(uv, float2(0.5), size - 0.5)).rgb);
 }
 
 half4 main(float2 coord) {
-    float2 half = size * 0.5;
-    float2 p = coord - half;
-    float d = slab(p, half, radius);
-    if (d > 0.5) return half4(0.0);
+    float2 b = size * 0.5;
+    float2 p = coord - b;
+    float d = slab(p, b, radius);
+    if (d > 0.5) {
+        return half4(0.0);
+    }
 
-    // The bevel normal: the SDF's gradient, tilted only near the edge.
     float e = 1.0;
     float2 grad = float2(
-        slab(p + float2(e, 0.0), half, radius) - slab(p - float2(e, 0.0), half, radius),
-        slab(p + float2(0.0, e), half, radius) - slab(p - float2(0.0, e), half, radius)
+        slab(p + float2(e, 0.0), b, radius) - slab(p - float2(e, 0.0), b, radius),
+        slab(p + float2(0.0, e), b, radius) - slab(p - float2(0.0, e), b, radius)
     );
-    float2 n2 = grad / max(length(grad), 1e-4);
+    float2 n2 = grad / max(length(grad), 0.0001);
     float inside = clamp(-d / max(thickness, 1.0), 0.0, 1.0);
     float bend = 1.0 - inside;
     float3 N = normalize(float3(n2 * bend, 1.0));
 
-    // Refraction: the backdrop is sampled through the bevel, and split a
-    // little by wavelength so the rim carries a prism's colour.
-    float2 bendUv = N.xy * thickness * bend;
-    float2 uv = coord + bendUv;
-    float2 spread = float2(blur);
-    half3 body = tap(uv) * 0.28;
-    body += tap(uv + float2( blur, 0.0)) * 0.09;
+    float2 uv = coord + N.xy * thickness * bend;
+    float3 body = tap(uv) * 0.28;
+    body += tap(uv + float2(blur, 0.0)) * 0.09;
     body += tap(uv + float2(-blur, 0.0)) * 0.09;
-    body += tap(uv + float2(0.0,  blur)) * 0.09;
+    body += tap(uv + float2(0.0, blur)) * 0.09;
     body += tap(uv + float2(0.0, -blur)) * 0.09;
-    body += tap(uv + float2( blur,  blur) * 0.7071) * 0.09;
-    body += tap(uv + float2(-blur,  blur) * 0.7071) * 0.09;
-    body += tap(uv + float2( blur, -blur) * 0.7071) * 0.09;
+    body += tap(uv + float2(blur, blur) * 0.7071) * 0.09;
+    body += tap(uv + float2(-blur, blur) * 0.7071) * 0.09;
+    body += tap(uv + float2(blur, -blur) * 0.7071) * 0.09;
     body += tap(uv + float2(-blur, -blur) * 0.7071) * 0.09;
 
     float2 ca = n2 * dispersion * bend;
     body.r = mix(body.r, tap(uv + ca).r, 0.65);
     body.b = mix(body.b, tap(uv - ca).b, 0.65);
 
-    // Absorption through the slab, thicker at the rim.
     float3 absorb = exp(-density * (0.35 + bend) * (float3(1.0) - tint));
-    half3 col = body * half3(absorb);
+    float3 col = body * absorb;
 
-    // Fresnel rim and a Blinn-Phong highlight from the bevel.
     float f = pow(1.0 - N.z, 5.0) * fresnel;
     float3 L = normalize(float3(light, 0.55));
     float3 H = normalize(L + float3(0.0, 0.0, 1.0));
     float spec = pow(max(dot(N, H), 0.0), 64.0) * specular;
-    col += half3(f * 0.9 + spec);
-
-    // A hairline of light right at the edge, so the shape reads even over a
-    // busy backdrop.
-    float edge = smoothstep(1.5, 0.0, -d) * 0.35;
-    col += half3(edge);
+    col += float3(f * 0.9 + spec);
+    col += float3(smoothstep(1.5, 0.0, -d) * 0.35);
 
     float aa = clamp(0.5 - d, 0.0, 1.0);
-    half a = half(mix(alpha * 0.55, alpha, backdropMix)) * half(aa);
-    return half4(col * a, a);
+    float a = mix(alpha * 0.55, alpha, backdropMix) * aa;
+    return half4(half3(col * a), half(a));
 }
 """
 
@@ -142,7 +134,13 @@ half4 main(float2 coord) {
             CanvasGlass.draw(canvas, width, height, look, backdrop)
             return
         }
-        val shader = RuntimeShader(SOURCE)
+        val shader = runCatching { RuntimeShader(SOURCE) }
+            .onFailure { android.util.Log.w("GlassOptics", "glass program rejected", it) }
+            .getOrNull()
+        if (shader == null) {
+            CanvasGlass.draw(canvas, width, height, look, backdrop)
+            return
+        }
         val source = backdrop ?: neutral(width, height)
         // The shader samples in pane coordinates; the backdrop is usually a
         // small blurred or synthetic field, so map one onto the other.
@@ -172,7 +170,11 @@ half4 main(float2 coord) {
         shader.setFloatUniform("backdropMix", if (backdrop == null) 0f else look.backdropMix)
         shader.setFloatUniform("alpha", look.alpha.coerceIn(0f, 1f))
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.shader = shader }
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        // A driver that rejects the program at draw time falls back too.
+        val drawn = runCatching {
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        }.isSuccess
+        if (!drawn) CanvasGlass.draw(canvas, width, height, look, backdrop)
     }
 
     private fun neutral(width: Int, height: Int): Bitmap =
