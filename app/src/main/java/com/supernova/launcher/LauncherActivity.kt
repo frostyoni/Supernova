@@ -1986,6 +1986,12 @@ class LauncherActivity :
         }
     }
 
+    // Which way the home pager is moving: a custom transition's lanes are
+    // roles (arriving/departing), and a page's position alone cannot say which.
+    private val workspaceDirection by lazy {
+        com.supernova.launcher.ui.ScrollDirection(binding.workspacePager)
+    }
+
     private fun applyScrollEffect(effect: ScrollEffect, force: Boolean = false) {
         if (!force && effect == appliedScrollEffect) return
         appliedScrollEffect = effect
@@ -2003,7 +2009,9 @@ class LauncherActivity :
         } else {
             null
         }
-        binding.workspacePager.setPageTransformer(PageTransformers.forEffect(effect, custom))
+        binding.workspacePager.setPageTransformer(
+            PageTransformers.forEffect(effect, custom, workspaceDirection)
+        )
     }
 
     // Status bar visibility/icon tint, nav bar transparency and rotation

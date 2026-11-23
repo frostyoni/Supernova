@@ -3,6 +3,7 @@ package com.supernova.launcher.ui
 import android.view.View
 import androidx.viewpager2.widget.ViewPager2
 import com.supernova.launcher.data.CustomTransition
+import com.supernova.launcher.data.TransitionMath
 import com.supernova.launcher.data.SettingEnumSerializer
 import kotlin.math.abs
 import kotlin.math.max
@@ -45,7 +46,8 @@ object PageTransformers {
 
     fun forEffect(
         effect: ScrollEffect,
-        custom: CustomTransition? = null
+        custom: CustomTransition? = null,
+        direction: ScrollDirection? = null
     ): ViewPager2.PageTransformer? {
         val transform: (View, Float) -> Unit = when (effect) {
             ScrollEffect.NONE -> return null
@@ -68,7 +70,9 @@ object PageTransformers {
             ScrollEffect.PUSH -> ::push
             ScrollEffect.PARALLAX -> ::parallax
             ScrollEffect.SWING -> ::swing
-            ScrollEffect.CUSTOM -> { page, position -> applyCustom(page, position, custom) }
+            ScrollEffect.CUSTOM -> { page, position ->
+                applyCustom(page, position, custom, direction?.value ?: 1)
+            }
         }
         return ViewPager2.PageTransformer { page, position ->
             // A page a whole page or more away is out of view in a plain
@@ -95,37 +99,35 @@ object PageTransformers {
         }
     }
 
-    // A Labs spec's frame, plus the invariant every page needs: it fades to
-    // nothing by the neighbour slot, where the wrapper resets it, so a spec
-    // that leaves its outgoing page visible does not snap away.
-    private fun applyCustom(page: View, position: Float, spec: CustomTransition?) {
+    // A Labs spec's frame. The lane is chosen by ROLE, not by which side the
+    // page is on: the arriving page reads the incoming lane and the departing
+    // one the outgoing lane, whichever way the finger goes. Picking by sign
+    // gave the departing page the incoming lane on a backward swipe, so it
+    // never faded and the wrapper's reset a page away cut it off in plain
+    // sight. TransitionMath owns the role, the mirror and the fade.
+    private fun applyCustom(page: View, position: Float, spec: CustomTransition?, direction: Int) {
         if (spec == null) {
             simple(page, position)
             return
         }
-        val time = abs(position).coerceIn(0f, 1f)
-        if (time <= 0f) {
+        if (abs(position) <= 0f) {
             resetTransforms(page)
             page.alpha = 1f
             return
         }
-        val incomingLane = position > 0f
-        val frame = spec.sample(incomingLane = incomingLane, progress = time)
-        page.translationX = frame.moveX * page.width
-        page.translationY = frame.moveY * page.height
+        val arriving = (position > 0f) == (direction >= 0)
+        val applied = TransitionMath.apply(spec, position, arriving)
+        page.translationX = applied.moveX * page.width
+        page.translationY = applied.moveY * page.height
         page.translationZ = 0f
-        page.scaleX = frame.scale
-        page.scaleY = frame.scale
-        page.rotation = frame.roll
-        page.rotationX = frame.pitch
-        page.rotationY = frame.yaw
+        page.scaleX = applied.scale
+        page.scaleY = applied.scale
+        page.rotation = applied.roll
+        page.rotationX = applied.pitch
+        page.rotationY = applied.yaw
         page.pivotX = page.width / 2f
         page.pivotY = page.height / 2f
-        // Only the page leaving has to be gone by the neighbour slot: it can
-        // still be on screen there, and the wrapper resets it. The incoming
-        // page is off screen at that distance, so fading it as well just
-        // made the arriving page wash out.
-        page.alpha = (if (incomingLane) frame.alpha else frame.alpha * (1f - time)).coerceIn(0f, 1f)
+        page.alpha = applied.alpha
     }
 
     // Transformers only restore what they themselves mutate; call this on the
