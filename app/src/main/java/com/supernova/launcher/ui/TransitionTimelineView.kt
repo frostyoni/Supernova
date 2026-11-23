@@ -7,16 +7,25 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
+import android.widget.HorizontalScrollView
+import androidx.core.graphics.ColorUtils
+import com.google.android.material.color.MaterialColors
 import com.supernova.launcher.data.ChipEdit
 import com.supernova.launcher.data.CustomTransition
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 // The builder's timeline: incoming and outgoing lanes over the swipe's 0..1,
 // each lane stacked into as many rows as its overlapping chips need. A chip's
-// body drags in time (keeping its length); its ends resize it. The view owns
-// no spec of its own beyond editing the one given to it.
+// body drags in time (keeping its length); its ends resize it.
+//
+// It lives in a HorizontalScrollView and can be zoomed, so a chip can be made
+// wide enough to grab precisely; the lane names stay pinned to the left edge
+// while the time axis scrolls, and a playhead follows the preview.
 @SuppressLint("ViewConstructor")
 class TransitionTimelineView(context: Context) : View(context) {
 
@@ -38,43 +47,104 @@ class TransitionTimelineView(context: Context) : View(context) {
             onSelected?.invoke()
         }
 
+    // 1 = the whole swipe across the card; up to MAX_ZOOM for fine work.
+    var zoom: Float = 1f
+        set(value) {
+            val clamped = value.coerceIn(1f, MAX_ZOOM)
+            if (clamped == field) return
+            field = clamped
+            requestLayout()
+            invalidate()
+            onZoomChanged?.invoke(clamped)
+        }
+
+    // Where the preview is in its loop, 0..1.
+    var playhead: Float = 0f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            invalidate()
+        }
+
+    // The width the unzoomed timeline should fill; the card sets it.
+    var baseWidthPx: Int = 0
+        set(value) {
+            field = value
+            requestLayout()
+        }
+
     var onChanged: (() -> Unit)? = null
     var onSelected: (() -> Unit)? = null
+    var onZoomChanged: ((Float) -> Unit)? = null
 
     private val density = resources.displayMetrics.density
-    private val labelWidth = 34f * density
-    private val side = 8f * density
-    private val rulerHeight = 20f * density
-    private val chipHeight = 32f * density
-    private val chipGap = 4f * density
-    private val laneGap = 10f * density
-    private val edgeGrab = 12f * density
+    private val gutter = 40f * density
+    private val side = 10f * density
+    private val rulerHeight = 26f * density
+    private val chipHeight = 34f * density
+    private val chipGap = 5f * density
+    private val lanePad = 8f * density
+    private val edgeGrab = 16f * density
+
+    private val ink = MaterialColors.getColor(this, android.R.attr.textColorSecondary)
+    private val accent = MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
+    private val laneWash = ColorUtils.setAlphaComponent(ink, 10)
+    private val hairline = ColorUtils.setAlphaComponent(ink, 36)
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = laneWash }
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = density
+        color = hairline
+    }
+    private val grip = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f * density
+        strokeCap = Paint.Cap.ROUND
+        color = 0xCCFFFFFF.toInt()
+    }
+    private val selection = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f * density
+        color = accent
+    }
+    private val playheadPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * density
+        color = accent
+    }
+    private val chipText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 10.5f * density
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         color = 0xFFFFFFFF.toInt()
     }
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 11f * density
-        typeface = Typeface.DEFAULT_BOLD
-        color = 0xFFFFFFFF.toInt()
+    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 10f * density
+        color = ink
     }
-    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 11f * density
-        color = 0xFF9AA4B2.toInt()
-    }
-    private val ruler = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = density
-        color = 0x339AA4B2
+    private val laneText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 10f * density
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        color = ink
     }
 
     private val incomingRows = mutableListOf<MutableList<Pair<Int, CustomTransition.Chip>>>()
     private val outgoingRows = mutableListOf<MutableList<Pair<Int, CustomTransition.Chip>>>()
-    private var laneTop = FloatArray(2)
-    private var laneHeight = FloatArray(2)
+    private val laneTop = FloatArray(2)
+    private val laneHeight = FloatArray(2)
     private var drag: Drag? = null
+    private val rect = RectF()
+
+    private val pinch = ScaleGestureDetector(
+        context,
+        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                drag = null
+                zoom *= detector.scaleFactor
+                return true
+            }
+        }
+    )
 
     private data class Drag(
         val incoming: Boolean,
@@ -94,9 +164,10 @@ class TransitionTimelineView(context: Context) : View(context) {
             .forEach { pair ->
                 val row = rows.firstOrNull { row ->
                     (row.maxOfOrNull { it.second.to } ?: 0f) <= pair.second.at + 0.0001f
-                } ?: mutableListOf<Pair<Int, CustomTransition.Chip>>().also { rows += it }
-                row += pair
+                } ?: mutableListOf<Pair<Int, CustomTransition.Chip>>().also { rows.add(it) }
+                row.add(pair)
             }
+        if (rows.isEmpty()) rows.add(mutableListOf())
         return rows
     }
 
@@ -105,109 +176,157 @@ class TransitionTimelineView(context: Context) : View(context) {
         incomingRows.addAll(packed(true))
         outgoingRows.clear()
         outgoingRows.addAll(packed(false))
-        if (incomingRows.isEmpty()) incomingRows.add(mutableListOf())
-        if (outgoingRows.isEmpty()) outgoingRows.add(mutableListOf())
     }
 
-    private fun timeArea(): Float = width - labelWidth - side * 2f
+    private fun unzoomedWidth(): Int =
+        if (baseWidthPx > 0) baseWidthPx
+        else (resources.displayMetrics.widthPixels - 96 * density).toInt()
 
-    private fun timeX(time: Float): Float = labelWidth + side + time.coerceIn(0f, 1f) * timeArea()
+    private fun timeArea(): Float = width - gutter - side * 2f
+
+    private fun timeX(time: Float): Float = gutter + side + time.coerceIn(0f, 1f) * timeArea()
 
     private fun xTime(x: Float): Float =
-        ((x - labelWidth - side) / timeArea().coerceAtLeast(1f)).coerceIn(0f, 1f)
+        ((x - gutter - side) / timeArea().coerceAtLeast(1f)).coerceIn(0f, 1f)
+
+    private fun scrollX(): Float = (parent as? HorizontalScrollView)?.scrollX?.toFloat() ?: 0f
 
     private fun laneAt(y: Float): Int? {
         for (lane in 0..1) {
-            val top = laneTop[lane]
-            if (y >= top && y <= top + laneHeight[lane]) return lane
+            if (y >= laneTop[lane] && y <= laneTop[lane] + laneHeight[lane]) return lane
         }
         return null
     }
 
     private fun chipRect(incoming: Boolean, row: Int, chip: CustomTransition.Chip): RectF {
         val lane = if (incoming) 0 else 1
-        val top = laneTop[lane] + row * (chipHeight + chipGap)
+        val top = laneTop[lane] + lanePad + row * (chipHeight + chipGap)
         return RectF(
             timeX(chip.at), top,
-            timeX(chip.to).coerceAtLeast(timeX(chip.at) + 6f * density), top + chipHeight
+            max(timeX(chip.to), timeX(chip.at) + 8f * density), top + chipHeight
         )
+    }
+
+    private fun rowOf(incoming: Boolean, index: Int): Int {
+        val rows = if (incoming) incomingRows else outgoingRows
+        rows.forEachIndexed { row, chips -> if (chips.any { it.first == index }) return row }
+        return 0
     }
 
     private fun findChip(x: Float, y: Float): Triple<Boolean, Int, CustomTransition.Chip>? {
         val lane = laneAt(y) ?: return null
         val incoming = lane == 0
         val rows = if (incoming) incomingRows else outgoingRows
-        for (row in rows) {
-            for ((index, chip) in row) {
-                if (chipRect(incoming, rows.indexOf(row), chip).contains(x, y)) {
-                    return Triple(incoming, index, chip)
-                }
+        rows.forEachIndexed { row, chips ->
+            chips.forEach { (index, chip) ->
+                if (chipRect(incoming, row, chip).contains(x, y)) return Triple(incoming, index, chip)
             }
         }
         return null
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = MeasureSpec.getSize(widthMeasureSpec)
         rebuildRows()
+        val width = max(1, (unzoomedWidth() * zoom).roundToInt())
         var top = rulerHeight
         for (lane in 0..1) {
             laneTop[lane] = top
             val rows = if (lane == 0) incomingRows.size else outgoingRows.size
-            laneHeight[lane] = rows * (chipHeight + chipGap) + laneGap
-            top += laneHeight[lane]
+            laneHeight[lane] = rows * (chipHeight + chipGap) - chipGap + lanePad * 2
+            top += laneHeight[lane] + chipGap
         }
-        val height = resolveSize((top + side).toInt(), heightMeasureSpec)
-        setMeasuredDimension(width, height)
+        setMeasuredDimension(width, resolveSize((top + side).roundToInt(), heightMeasureSpec))
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        // Ruler: quarters, with the ends labelled.
-        for (i in 0..4) {
-            val x = timeX(i / 4f)
-            canvas.drawLine(x, rulerHeight - 5f * density, x, rulerHeight, ruler)
-        }
-        listOf(0f, 0.5f, 1f).forEach { at ->
-            val textValue = String.format(Locale.US, "%.1f", at)
-            val x = (timeX(at) - label.measureText(textValue) / 2f).coerceIn(0f, width - label.measureText(textValue))
-            canvas.drawText(textValue, x, rulerHeight - 8f * density, label)
-        }
-        drawLane(canvas, incoming = true, laneTop[0], "In")
-        drawLane(canvas, incoming = false, laneTop[1], "Out")
+        drawRuler(canvas)
+        drawLane(canvas, incoming = true, name = "IN")
+        drawLane(canvas, incoming = false, name = "OUT")
+        // The playhead rides over everything, so it is clear which chips are
+        // acting at the moment the preview shows.
+        val x = timeX(playhead)
+        canvas.drawLine(x, rulerHeight - 6f * density, x, height - side, playheadPaint)
+        fill.color = accent
+        canvas.drawCircle(x, rulerHeight - 6f * density, 3f * density, fill)
     }
 
-    private fun drawLane(canvas: Canvas, incoming: Boolean, top: Float, name: String) {
-        canvas.drawText(name, 0f, top + chipHeight / 2f + 4f * density, label)
-        val rows = if (incoming) incomingRows else outgoingRows
-        rows.forEachIndexed { row, chips ->
-            chips.forEach { (index, chip) ->
-                val rect = chipRect(incoming, row, chip)
-                fill.color = colour(chip.channel)
-                canvas.drawRoundRect(rect, 6f * density, 6f * density, fill)
-                if (selected == Selection(incoming, index)) {
-                    canvas.drawRoundRect(rect, 6f * density, 6f * density, stroke)
-                }
-                val name = title(chip)
-                // Narrow chips show the channel only; the inspector has the
-                // numbers, so the label never has to be cut mid-number.
-                val title = if (rect.width() >= 86f * density) {
-                    String.format(Locale.US, "%s %.2f→%.2f", name, chip.from, chip.value)
-                } else {
-                    name
-                }
-                val available = rect.width() - 10f * density
-                if (available > 8f * density) {
-                    canvas.save()
-                    canvas.clipRect(rect)
-                    canvas.drawText(title, rect.left + 5f * density, rect.centerY() + 4f * density, text)
-                    canvas.restore()
-                }
+    private fun drawRuler(canvas: Canvas) {
+        canvas.drawLine(gutter + side, rulerHeight - 1f, width - side, rulerHeight - 1f, line)
+        val labelEvery = when {
+            zoom >= 4f -> 1
+            zoom >= 2f -> 2
+            else -> 5
+        }
+        for (step in 0..10) {
+            val time = step / 10f
+            val x = timeX(time)
+            val major = step % labelEvery == 0
+            canvas.drawLine(x, rulerHeight - (if (major) 8f else 4f) * density, x, rulerHeight - 1f, line)
+            if (major) {
+                val text = String.format(Locale.US, "%.1f", time)
+                val tx = (x - small.measureText(text) / 2f).coerceIn(0f, width - small.measureText(text))
+                canvas.drawText(text, tx, rulerHeight - 12f * density, small)
             }
         }
     }
 
+    private fun drawLane(canvas: Canvas, incoming: Boolean, name: String) {
+        val lane = if (incoming) 0 else 1
+        val top = laneTop[lane]
+        val rows = if (incoming) incomingRows else outgoingRows
+        // A wash behind the lane, so the two read as separate tracks.
+        rect.set(gutter + side / 2f, top, width - side / 2f, top + laneHeight[lane])
+        canvas.drawRoundRect(rect, 10f * density, 10f * density, wash)
+        if (lane(incoming).isEmpty()) {
+            canvas.drawText("empty", gutter + side + 6f * density, top + laneHeight[lane] / 2f + 4f * density, small)
+        }
+        rows.forEachIndexed { row, chips ->
+            chips.forEach { (index, chip) ->
+                val bounds = chipRect(incoming, row, chip)
+                fill.color = colour(chip.channel)
+                canvas.drawRoundRect(bounds, 9f * density, 9f * density, fill)
+                val isSelected = selected == Selection(incoming, index)
+                if (isSelected) {
+                    canvas.drawRoundRect(bounds, 9f * density, 9f * density, selection)
+                    // Grips at the ends: the resize affordance, made visible.
+                    val inset = 5f * density
+                    canvas.drawLine(
+                        bounds.left + inset, bounds.centerY() - 6f * density,
+                        bounds.left + inset, bounds.centerY() + 6f * density, grip
+                    )
+                    canvas.drawLine(
+                        bounds.right - inset, bounds.centerY() - 6f * density,
+                        bounds.right - inset, bounds.centerY() + 6f * density, grip
+                    )
+                }
+                val title = label(chip, bounds.width())
+                if (bounds.width() > 14f * density) {
+                    canvas.save()
+                    canvas.clipRect(bounds)
+                    canvas.drawText(title, bounds.left + 8f * density, bounds.centerY() + 4f * density, chipText)
+                    canvas.restore()
+                }
+            }
+        }
+        // Pinned to the visible left edge, over a pill so it stays readable
+        // when the time axis has scrolled under it.
+        val textWidth = laneText.measureText(name)
+        val left = max(side, scrollX() + side)
+        val centreY = top + laneHeight[lane] / 2f
+        rect.set(left - 5f * density, centreY - 9f * density, left + textWidth + 5f * density, centreY + 9f * density)
+        fill.color = laneWash
+        canvas.drawRoundRect(rect, 8f * density, 8f * density, fill)
+        canvas.drawText(name, left, centreY + 3.5f * density, laneText)
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        pinch.onTouchEvent(event)
+        if (pinch.isInProgress) {
+            drag = null
+            parent?.requestDisallowInterceptTouchEvent(true)
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 val hit = findChip(event.x, event.y)
@@ -216,10 +335,10 @@ class TransitionTimelineView(context: Context) : View(context) {
                     return true
                 }
                 val (incoming, index, chip) = hit
-                val rect = chipRect(incoming, rowOf(incoming, index), chip)
+                val bounds = chipRect(incoming, rowOf(incoming, index), chip)
                 val edge = when {
-                    abs(event.x - rect.left) <= edgeGrab -> EDGE_START
-                    abs(event.x - rect.right) <= edgeGrab -> EDGE_END
+                    abs(event.x - bounds.left) <= edgeGrab -> EDGE_START
+                    abs(event.x - bounds.right) <= edgeGrab -> EDGE_END
                     else -> EDGE_BODY
                 }
                 selected = Selection(incoming, index)
@@ -228,34 +347,29 @@ class TransitionTimelineView(context: Context) : View(context) {
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val drag = drag ?: return true
+                val current = drag ?: return true
                 val time = ChipEdit.snap(xTime(event.x))
-                val edited = when (drag.edge) {
-                    EDGE_START -> ChipEdit.resizeStart(drag.original, time)
-                    EDGE_END -> ChipEdit.resizeEnd(drag.original, time)
-                    else -> {
-                        val delta = time - drag.startTime
-                        ChipEdit.move(drag.original, drag.original.at + delta)
-                    }
+                val edited = when (current.edge) {
+                    EDGE_START -> ChipEdit.resizeStart(current.original, time)
+                    EDGE_END -> ChipEdit.resizeEnd(current.original, time)
+                    else -> ChipEdit.move(current.original, current.original.at + (time - current.startTime))
                 }
-                replace(drag.incoming, drag.index, edited)
+                replace(current.incoming, current.index, edited)
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 drag = null
                 parent?.requestDisallowInterceptTouchEvent(false)
+                performClick()
                 return true
             }
         }
         return super.onTouchEvent(event)
     }
 
-    private fun rowOf(incoming: Boolean, index: Int): Int {
-        val rows = if (incoming) incomingRows else outgoingRows
-        rows.forEachIndexed { row, chips ->
-            if (chips.any { it.first == index }) return row
-        }
-        return 0
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 
     private fun replace(incoming: Boolean, index: Int, chip: CustomTransition.Chip) {
@@ -274,7 +388,7 @@ class TransitionTimelineView(context: Context) : View(context) {
         CustomTransition.Channel.YAW -> 0xFFA34E44.toInt()
     }
 
-    private fun title(chip: CustomTransition.Chip): String {
+    private fun label(chip: CustomTransition.Chip, width: Float): String {
         val name = when (chip.channel) {
             CustomTransition.Channel.MOVE_X -> "X"
             CustomTransition.Channel.MOVE_Y -> "Y"
@@ -284,12 +398,19 @@ class TransitionTimelineView(context: Context) : View(context) {
             CustomTransition.Channel.PITCH -> "pitch"
             CustomTransition.Channel.YAW -> "yaw"
         }
-        return name
+        // Narrow chips keep just the channel; the inspector has the numbers,
+        // so a label is never cut mid-number.
+        return if (width >= 92f * density) {
+            String.format(Locale.US, "%s %.2f→%.2f", name, chip.from, chip.value)
+        } else {
+            name
+        }
     }
 
     private companion object {
         const val EDGE_START = 0
         const val EDGE_END = 1
         const val EDGE_BODY = 2
+        const val MAX_ZOOM = 6f
     }
 }
