@@ -980,7 +980,8 @@ class LauncherRepository(private val context: Context) {
         val payload = BackupPayload(
             exportedAtEpochMs = System.currentTimeMillis(),
             model = model,
-            prefs = prefs
+            prefs = prefs,
+            customTransition = CustomTransitionStore.raw(context) ?: ""
         )
         json.encodeToString(payload)
     }
@@ -1104,6 +1105,12 @@ class LauncherRepository(private val context: Context) {
                 prefs[StoreKeys.model] = json.encodeToString(validated)
                 LauncherPreferences.writeAll(prefs, restoredPrefs)
                 prefs.remove(StoreKeys.retiredFolderSortAz)
+            }
+            // The transition the home swipes with is part of the state being
+            // restored, so it comes back with the layout and the settings.
+            payload.customTransition?.let { spec ->
+                if (spec.isBlank()) CustomTransitionStore.clear(context)
+                else CustomTransitionStore.save(context, spec)
             }
         }
 

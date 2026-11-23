@@ -18,7 +18,7 @@ import com.supernova.launcher.data.SearchWindowMode
 import kotlin.math.roundToInt
 import com.supernova.launcher.ui.BadgePosition
 import com.supernova.launcher.ui.BadgeStyle
-import com.supernova.launcher.ui.CustomTransitionStore
+import com.supernova.launcher.data.CustomTransitionStore
 import com.supernova.launcher.ui.DockBgStyle
 import com.supernova.launcher.ui.FolderPreviewStyle
 import androidx.annotation.StringRes

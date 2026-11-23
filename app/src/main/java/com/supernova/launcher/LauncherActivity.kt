@@ -2005,7 +2005,7 @@ class LauncherActivity :
         // A Labs spec lives outside the prefs, so it is read when the effect
         // is applied rather than cached with the enum.
         val custom = if (effect == ScrollEffect.CUSTOM) {
-            com.supernova.launcher.ui.CustomTransitionStore.load(this)
+            com.supernova.launcher.data.CustomTransitionStore.load(this)
         } else {
             null
         }

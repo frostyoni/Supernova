@@ -42,6 +42,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.supernova.launcher.R
 import com.supernova.launcher.data.ChipEdit
 import com.supernova.launcher.data.CustomTransition
+import com.supernova.launcher.data.CustomTransitionStore
 import com.supernova.launcher.data.LauncherPreferences
 import com.supernova.launcher.data.Pref
 import com.supernova.launcher.data.TransitionPresets

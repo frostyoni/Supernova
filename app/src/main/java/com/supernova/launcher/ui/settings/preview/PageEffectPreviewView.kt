@@ -8,7 +8,7 @@ import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.supernova.launcher.data.CustomTransition
-import com.supernova.launcher.ui.CustomTransitionStore
+import com.supernova.launcher.data.CustomTransitionStore
 import com.supernova.launcher.ui.PageTransformers
 import com.supernova.launcher.ui.ScrollEffect
 

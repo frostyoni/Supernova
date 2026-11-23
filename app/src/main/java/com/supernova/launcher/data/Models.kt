@@ -706,7 +706,12 @@ data class BackupPayload(
     val version: Int = 1,
     val exportedAtEpochMs: Long,
     val model: LauncherModel,
-    val prefs: LauncherPrefs
+    val prefs: LauncherPrefs,
+    // The Labs custom transition, as its JSON. Null only in a backup written
+    // before it existed, which leaves the current one alone; blank means there
+    // was none, and a restore clears it. A backup restores a known state, and
+    // the transition the home swipes with is part of that state.
+    val customTransition: String? = null
 )
 
 // Serializable for AppListCache, the drawer's list kept between runs.

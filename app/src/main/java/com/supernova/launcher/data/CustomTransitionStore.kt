@@ -1,7 +1,6 @@
-package com.supernova.launcher.ui
+package com.supernova.launcher.data
 
 import android.content.Context
-import com.supernova.launcher.data.CustomTransition
 
 // Where a Labs custom transition lives: one JSON document in its own small
 // preferences file. It is deliberately outside the main store for now - a
