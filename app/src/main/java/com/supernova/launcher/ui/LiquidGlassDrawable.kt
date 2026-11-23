@@ -107,28 +107,60 @@ class LiquidGlassDrawable @JvmOverloads constructor(
     private fun render(width: Int, height: Int): Bitmap {
         val bitmap = createBitmap(width, height)
         val canvas = Canvas(bitmap)
-        val path = Path().apply {
-            val corner = cornerRadius(width, height)
-            addRoundRect(
-                RectF(0f, 0f, width.toFloat(), height.toFloat()), corner, corner, Path.Direction.CW
-            )
-        }
         // Read before the pane is painted, so the generation stamped below is
         // the one this picture came from.
         val wallpaper = WallpaperBlur.get(application)
-        canvas.withClip(path) {
-            if (wallpaper != null) {
-                drawWallpaper(this, wallpaper, width, height)
-            } else {
-                drawWallpaperColours(this, width, height)
-            }
-            drawRect(0f, 0f, width.toFloat(), height.toFloat(), veil)
-            painter.drawPane(this, glass, Color.WHITE, width, height)
-            drawSpecular(this, width, height)
-        }
-        painter.drawEdge(canvas, path, glass, width, height)
+        val density = application.resources.displayMetrics.density
+        val smoked = night || glass == com.supernova.launcher.data.IconGlass.SMOKED
+        com.supernova.launcher.data.GlassOptics.draw(
+            canvas,
+            width,
+            height,
+            com.supernova.launcher.data.GlassOptics.Look(
+                radiusPx = cornerRadius(width, height),
+                thicknessPx = 14f * density,
+                blurPx = 9f * density,
+                tint = if (smoked) Color.BLACK else Color.WHITE,
+                density = if (smoked) 0.62f else 0.28f,
+                fresnel = if (smoked) 0.4f else 0.6f,
+                specular = if (smoked) 0.3f else 0.45f
+            ),
+            wallpaper ?: colourField()
+        )
         cachedGeneration = WallpaperBlur.generation
         return bitmap
+    }
+
+    // Android 13 and up will not hand over the wallpaper's pixels, but it does
+    // report its colours. A soft field of them gives the optics something to
+    // bend and blur, so the pane reads as glass over the wallpaper's own light
+    // rather than as a flat rectangle.
+    private fun colourField(): Bitmap {
+        val colours = runCatching {
+            WallpaperManager.getInstance(application).getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
+        }.getOrNull()
+        val primary = colours?.primaryColor?.toArgb() ?: FALLBACK_PRIMARY
+        val secondary = colours?.secondaryColor?.toArgb() ?: primary
+        val tertiary = colours?.tertiaryColor?.toArgb() ?: secondary
+        val field = createBitmap(FIELD_SIZE, FIELD_SIZE)
+        val canvas = Canvas(field)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.shader = android.graphics.LinearGradient(
+            0f, 0f, FIELD_SIZE.toFloat(), FIELD_SIZE.toFloat(),
+            primary, secondary, Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(0f, 0f, FIELD_SIZE.toFloat(), FIELD_SIZE.toFloat(), paint)
+        paint.shader = android.graphics.RadialGradient(
+            FIELD_SIZE * 0.28f, FIELD_SIZE * 0.24f, FIELD_SIZE * 0.7f,
+            ColorUtils.setAlphaComponent(tertiary, 200), Color.TRANSPARENT, Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(0f, 0f, FIELD_SIZE.toFloat(), FIELD_SIZE.toFloat(), paint)
+        paint.shader = android.graphics.RadialGradient(
+            FIELD_SIZE * 0.8f, FIELD_SIZE * 0.85f, FIELD_SIZE * 0.6f,
+            ColorUtils.setAlphaComponent(secondary, 170), Color.TRANSPARENT, Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(0f, 0f, FIELD_SIZE.toFloat(), FIELD_SIZE.toFloat(), paint)
+        return field
     }
 
     // The blurred wallpaper, centre-cropped to fill the pane. Without a
@@ -230,6 +262,7 @@ class LiquidGlassDrawable @JvmOverloads constructor(
         // A neutral wash when the system reports no wallpaper colours either.
         const val FALLBACK_PRIMARY = 0xFF4A5A6A.toInt()
         const val COLOUR_WASH = 0.62f
+        const val FIELD_SIZE = 64
         const val NIGHT_VEIL_ALPHA = 0.30f
         const val SPECULAR = 0.09f
     }
