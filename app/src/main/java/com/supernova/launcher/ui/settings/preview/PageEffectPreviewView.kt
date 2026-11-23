@@ -32,6 +32,9 @@ class PageEffectPreviewView(
 
     private var effect: ScrollEffect = ScrollEffect.NONE
     private var custom: CustomTransition? = null
+
+    // Where the loop has got to, 0..1: the builder's timeline playhead.
+    var onProgress: ((Float) -> Unit)? = null
     private val ease = AccelerateDecelerateInterpolator()
     // How far the fake drag has gone, in pixels, toward the second page.
     private var dragged = 0f
@@ -113,6 +116,7 @@ class PageEffectPreviewView(
             t < 2 * REST_MS + SWIPE_MS -> 1f
             else -> 1f - ease.getInterpolation((t - 2 * REST_MS - SWIPE_MS) / SWIPE_MS.toFloat())
         } * width
+        if (width > 0f) onProgress?.invoke(target / width)
         val moves = width > 0f && target != dragged && (pager.isFakeDragging || pager.beginFakeDrag())
         if (moves) {
             // A drag toward the next page moves the finger left: negative.
