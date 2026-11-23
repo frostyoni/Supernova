@@ -35,7 +35,7 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.materialswitch.MaterialSwitch
+import androidx.appcompat.widget.SwitchCompat
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -75,7 +75,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
     private lateinit var valueField: Field
     private lateinit var atField: Field
     private lateinit var toField: Field
-    private lateinit var stackSwitch: MaterialSwitch
+    private lateinit var stackSwitch: SwitchCompat
     private lateinit var duplicateButton: MaterialButton
     private lateinit var deleteButton: MaterialButton
     private lateinit var nameField: Field
@@ -324,7 +324,12 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
         }
         card.addView(equalRow(listOf(atField.layout, toField.layout)))
 
-        stackSwitch = MaterialSwitch(this).apply {
+        // The app's own switch, as every other toggle: Material's Material3
+        // switch asked for a text-on layout this theme does not give it.
+        stackSwitch = SwitchCompat(this).apply {
+            showText = false
+            textOn = ""
+            textOff = ""
             text = getString(R.string.custom_transition_stack_switch)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTextColor(ink)
