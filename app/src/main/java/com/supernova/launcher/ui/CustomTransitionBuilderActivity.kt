@@ -259,11 +259,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(8))
         }
         controls.addView(
-            TextView(this).apply {
-                text = getString(R.string.custom_transition_lane_rule)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-                setTextColor(inkSoft)
-            },
+            View(this),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         controls.addView(smallButton("−", getString(R.string.custom_transition_zoom_out)) { timeline.zoom /= 1.5f })
@@ -288,6 +284,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
         }
         card.addView(timelineScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         card.addView(hint(getString(R.string.custom_transition_timeline_hint), top = dp(8)))
+        card.addView(hint(getString(R.string.custom_transition_lane_rule), top = dp(4)))
         return card
     }
 
@@ -378,7 +375,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             background = GradientDrawable().apply {
                 cornerRadius = dp(20).toFloat()
                 setColor(ContextCompat.getColor(this@CustomTransitionBuilderActivity, R.color.surface))
-                setStroke(dp(1), hairline)
+                setStroke(density().toInt().coerceAtLeast(1), hairline)
             }
         }
         column.addView(
@@ -742,7 +739,9 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
         CustomTransition.Ease.OVERSHOOT -> getString(R.string.custom_transition_ease_overshoot)
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * density()).toInt()
+
+    private fun density(): Float = resources.displayMetrics.density
 
     private companion object {
         val ICON_COLOURS = intArrayOf(
