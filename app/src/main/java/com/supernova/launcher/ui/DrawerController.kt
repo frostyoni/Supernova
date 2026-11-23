@@ -67,6 +67,9 @@ class DrawerController(
     private val onSearchBarLongPress: (View) -> Unit = {}
 ) {
 
+    // Which way the drawer's pager is moving, for a custom transition's roles.
+    private val drawerDirection by lazy { ScrollDirection(binding.drawerPager) }
+
     // Tab identity: null = All (or Personal when the work tab is on).
     private object WorkTab
 
@@ -2320,7 +2323,8 @@ class DrawerController(
                         CustomTransitionStore.load(context)
                     } else {
                         null
-                    }
+                    },
+                    drawerDirection
                 )
             } else {
                 null
