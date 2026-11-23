@@ -964,6 +964,14 @@
     <string name="feed_calendar_permission">Allow calendar access to see upcoming events</string>
     <string name="feed_contacts_title">Starred contacts</string>
     <string name="feed_contacts_permission">Allow contacts access to see starred contacts</string>
+    <string name="feed_usage_title">App usage</string>
+    <string name="feed_show_usage">Show the apps you open most</string>
+    <string name="feed_usage_empty">Apps you open show up here, counted on this device</string>
+    <string name="feed_usage_open">Open %1$s</string>
+    <plurals name="feed_usage_launches">
+        <item quantity="one">%1$d launch</item>
+        <item quantity="other">%1$d launches</item>
+    </plurals>
     <string name="feed_grant_access">Grant access</string>
     <string name="calendar_permission_needed">Calendar permission is required for the calendar card</string>
     <string name="contacts_permission_feed_needed">Contacts permission is required for the contacts card</string>

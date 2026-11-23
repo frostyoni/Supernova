@@ -12,9 +12,10 @@ object FeedOrder {
     const val MEDIA = "builtin:media"
     const val CALENDAR = "builtin:calendar"
     const val CONTACTS = "builtin:contacts"
+    const val USAGE = "builtin:usage"
 
     // Where they stood before the order could be changed: first.
-    val BUILT_INS = listOf(MEDIA, CALENDAR, CONTACTS)
+    val BUILT_INS = listOf(MEDIA, CALENDAR, CONTACTS, USAGE)
 
     enum class Group { PINNED, REST }
 

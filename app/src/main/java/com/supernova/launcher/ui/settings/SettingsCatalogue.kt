@@ -1325,6 +1325,15 @@ object SettingsCatalogue {
                         }
                     ).hiddenWhen(feedHidden)
                 )
+                // Counted by the launcher itself: nothing to grant or ask for.
+                add(
+                    SettingItem.Toggle(
+                        R.string.feed_usage_title,
+                        subtitle = R.string.feed_show_usage,
+                        get = { it.feedShowUsage },
+                        set = { viewModel.set(Pref.feedShowUsage, it) }
+                    ).hiddenWhen(feedHidden)
+                )
                 add(SettingItem.Row(R.string.cards_add, onClick = actions.addCard, visibleIf = { it.feedEnabled }))
                 // The cards' color and opacity: the Style tab's Cards row.
                 add(

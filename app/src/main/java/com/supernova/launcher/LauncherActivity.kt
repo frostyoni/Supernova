@@ -1681,6 +1681,10 @@ class LauncherActivity :
                     )
                 }
 
+                // The same path a home screen icon takes, so the launch is
+                // counted (noteLaunch) like any other.
+                override fun launchApp(app: LaunchableApp) = this@LauncherActivity.launchApp(app)
+
                 override fun openCalendarEvent(eventId: Long) {
                     runLogged("open calendar event") {
                         startActivity(

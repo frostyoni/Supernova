@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginVertical="@dimen/space_sm"
+    android:background="@drawable/bg_feed_card"
+    android:orientation="vertical"
+    android:padding="@dimen/space_ms">
+
+    <TextView
+        android:id="@+id/usageHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/feed_usage_title"
+        android:textSize="@dimen/text_secondary"
+        android:textStyle="bold" />
+
+    <!-- One row per app, added programmatically (<= 5). -->
+    <LinearLayout
+        android:id="@+id/usageRows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_xs"
+        android:orientation="vertical" />
+
+    <TextView
+        android:id="@+id/usageEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_xs"
+        android:text="@string/feed_usage_empty"
+        android:textSize="@dimen/text_secondary"
+        android:visibility="gone" />
+</LinearLayout>
