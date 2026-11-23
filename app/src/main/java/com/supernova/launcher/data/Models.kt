@@ -693,7 +693,11 @@ data class BackupPayload(
     val version: Int = 1,
     val exportedAtEpochMs: Long,
     val model: LauncherModel,
-    val prefs: LauncherPrefs
+    val prefs: LauncherPrefs,
+    // The custom label font's file, base64: null in an export taken before
+    // it existed and in one taken with no font stored. A restore leaves the
+    // installed font alone for null and removes it for a blank string.
+    val customFontBase64: String? = null
 )
 
 // Serializable for AppListCache, the drawer's list kept between runs.

@@ -6,6 +6,7 @@ import com.supernova.launcher.R
 import com.supernova.launcher.SupernovaApp
 import com.supernova.launcher.data.IconGlass
 import com.supernova.launcher.data.IconShape
+import com.supernova.launcher.data.LabelFontStore
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.LockMethod
 import com.supernova.launcher.data.Pref
@@ -69,6 +70,10 @@ object SettingsCatalogue {
         val pickColor: (Int, String, Int, (String) -> Unit) -> Unit = { _, _, _, _ -> },
         val pickIconPack: () -> Unit = {},
         val pickIconShape: () -> Unit = {},
+        // The label font's file: the document picker, and the row that drops
+        // it back to a system family.
+        val pickCustomFont: () -> Unit = {},
+        val clearCustomFont: () -> Unit = {},
         val resetCustomIcons: () -> Unit = {},
         val resetHiddenLabels: () -> Unit = {},
         val clearIconCache: () -> Unit = {},
@@ -247,10 +252,14 @@ object SettingsCatalogue {
             }
         )
 
-        fun fontPick(current: LabelFont, onPick: (LabelFont) -> Unit) = pick(
-            R.string.label_font, LabelFont.entries, LabelFont.entries.indexOf(current),
-            { context.getString(EnumLabels.of(it)) }, onPick
-        )
+        // Custom is offered once there is a file behind it, and while it is
+        // the value in force: a name that drew nothing would be a dead pick.
+        fun fontPick(current: LabelFont, onPick: (LabelFont) -> Unit) {
+            val values = LabelFont.entries.filter {
+                it != LabelFont.CUSTOM || it == current || LabelFontStore.hasFont(context)
+            }
+            pick(R.string.label_font, values, values.indexOf(current), { context.getString(EnumLabels.of(it)) }, onPick)
+        }
     }
 
     // The accent: its dot on the row, and every option's dot in the menu.
@@ -434,6 +443,19 @@ object SettingsCatalogue {
                         R.string.label_shadow, R.string.label_single_line
                     )
                 ),
+                // The file a Custom font reads from, under the card that
+                // picks the font: the row shows the file's name, so it is
+                // clear which one every label draws with.
+                SettingItem.Row(
+                    R.string.custom_font,
+                    subtitle = { customFontName(context) },
+                    onClick = actions.pickCustomFont
+                ).hiddenWhen { needsOn(R.string.label_group, !it.showLabels) },
+                SettingItem.Row(
+                    R.string.custom_font_remove,
+                    onClick = actions.clearCustomFont,
+                    visibleIf = { LabelFontStore.hasFont(context) }
+                ).hiddenWhen { needsOn(R.string.label_group, !it.showLabels) },
                 SettingItem.Row(
                     R.string.desktop_grid,
                     subtitle = { context.getString(R.string.grid_value, it.gridRows, it.gridCols) },
@@ -2156,6 +2178,13 @@ private fun needsOff(@StringRes setting: Int, set: Boolean, @StringRes page: Int
 
 private fun dependsOn(@StringRes setting: Int, unmet: Boolean) =
     SettingItem.HiddenBy(setting, SettingItem.HiddenBy.Needs.OTHER).takeIf { unmet }
+
+// The custom font row's value: the picked file's name, else what picking one
+// would set. A font restored from a backup carries no name of its own.
+private fun customFontName(context: Context): CharSequence =
+    LabelFontStore.fileName(context) ?: context.getString(
+        if (LabelFontStore.hasFont(context)) R.string.custom_font_unnamed else R.string.custom_font_none
+    )
 
 // The drawer field's own rows go with the field.
 private val drawerFieldHidden: (LauncherPrefs) -> SettingItem.HiddenBy? = {

@@ -35,6 +35,7 @@ import com.supernova.launcher.data.CustomShapeSpec
 import com.supernova.launcher.data.DrawerGroup
 import com.supernova.launcher.data.DrawerGroupType
 import com.supernova.launcher.data.IconShape
+import com.supernova.launcher.data.LabelFontStore
 import com.supernova.launcher.data.LaunchableApp
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.LockMethod
@@ -56,6 +57,7 @@ import com.supernova.launcher.notification.SupernovaNotificationListener
 import com.supernova.launcher.ui.Animations
 import com.supernova.launcher.ui.ChoiceMenu
 import com.supernova.launcher.ui.FolderPreviewStyle
+import com.supernova.launcher.ui.LabelFont
 import com.supernova.launcher.ui.LabelStyler
 import com.supernova.launcher.ui.LauncherViewModel
 import com.supernova.launcher.ui.dp
@@ -109,6 +111,48 @@ class SettingsActivity : AppCompatActivity() {
             photoPickCallback?.invoke(uri)
             photoPickCallback = null
         }
+
+    // The label font's file. Any document is offered, since most pickers
+    // report a .ttf or .otf as an octet stream rather than a font; the store
+    // rejects what isn't one.
+    private val pickFontLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) useCustomFont(uri)
+        }
+
+    // Copies and validates the picked file, then makes it every label's font.
+    // A file the store refuses leaves the stored one and the setting as they
+    // were, and says why.
+    private fun useCustomFont(uri: android.net.Uri) {
+        lifecycleScope.launch {
+            val name = LabelFontStore.displayName(this@SettingsActivity, uri)
+            val stored = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                LabelFontStore.store(applicationContext, uri, name)
+            }
+            when (stored) {
+                LabelFontStore.Result.STORED -> {
+                    viewModel.set(Pref.labelFont, LabelFont.CUSTOM)
+                    render()
+                }
+                LabelFontStore.Result.TOO_BIG ->
+                    Toast.makeText(this@SettingsActivity, R.string.custom_font_too_big, Toast.LENGTH_LONG).show()
+                LabelFontStore.Result.NOT_A_FONT, LabelFontStore.Result.FAILED ->
+                    Toast.makeText(this@SettingsActivity, R.string.custom_font_failed, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // Back to a system family, with the file dropped: nothing in files/ should
+    // outlive the choice that used it.
+    private fun clearCustomFont() {
+        LabelFontStore.clear(this)
+        if (viewModel.state.value.prefs.labelFont == LabelFont.CUSTOM) {
+            viewModel.set(Pref.labelFont, LabelFont.DEFAULT)
+        }
+        render()
+        Toast.makeText(this, R.string.custom_font_removed, Toast.LENGTH_SHORT).show()
+    }
+
     private lateinit var adapter: SettingsAdapter
 
     // The settings row last tapped, and so what a choice menu opens under.
@@ -510,6 +554,16 @@ class SettingsActivity : AppCompatActivity() {
             },
             pickIconPack = ::showIconPackPicker,
             pickIconShape = ::showIconShapePicker,
+            // */* with the font types: many pickers give a font no font type.
+            pickCustomFont = {
+                pickFontLauncher.launch(
+                    arrayOf(
+                        "font/ttf", "font/otf", "application/x-font-ttf",
+                        "application/vnd.ms-opentype", "*/*"
+                    )
+                )
+            },
+            clearCustomFont = ::clearCustomFont,
             resetCustomIcons = ::confirmResetCustomIcons,
             resetHiddenLabels = ::confirmResetHiddenLabels,
             exportIcons = { exportIconsLauncher.launch("supernova-icons.zip") },
