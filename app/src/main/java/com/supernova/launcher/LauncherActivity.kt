@@ -4877,7 +4877,26 @@ class LauncherActivity :
     // An item view's icon drawn again where it is (a badge moved).
     private fun redrawItemView(view: View, item: LauncherItem) {
         if (item.itemType == ItemType.WIDGET) return
-        runCatching { ItemIconBinding.bind(view) }.getOrNull()?.let { redrawItemIcon(it, item) }
+        runCatching { ItemIconBinding.bind(view) }.getOrNull()?.let {
+            redrawItemIcon(it, item)
+            pulseBadge(it.root)
+        }
+    }
+
+    // A badge arriving or leaving changes an icon that does not move. A short
+    // settle on the item says so without shifting anything around it; with
+    // animations off it is simply the new icon.
+    private fun pulseBadge(itemView: View) {
+        if (!Animations.enabled(viewModel.state.value.prefs)) return
+        itemView.animate().cancel()
+        itemView.scaleX = PULSE_FROM
+        itemView.scaleY = PULSE_FROM
+        itemView.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(PULSE_MS)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f))
+            .start()
     }
 
     // The dock's views for these items redrawn in place; false when one of
@@ -5432,6 +5451,9 @@ class LauncherActivity :
     }
 
     companion object {
+        // A badge change settles the item it landed on.
+        private const val PULSE_FROM = 0.94f
+        private const val PULSE_MS = 220L
         // Every live launcher activity, for closeOtherLaunchers. Main thread
         // only.
         private val liveLaunchers = mutableListOf<java.lang.ref.WeakReference<LauncherActivity>>()

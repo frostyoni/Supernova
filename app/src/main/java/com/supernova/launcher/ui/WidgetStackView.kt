@@ -176,6 +176,9 @@ class WidgetStackView(
             ?.setDuration(SWITCH_ANIMATION_MS)
             ?.start()
 
+        // A tick per turn: the stack is under a thumb that cannot see the
+        // dots while it drags.
+        performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
         controller.onStackFrontChanged(item.id, frontIndex)
         invalidate()
     }
