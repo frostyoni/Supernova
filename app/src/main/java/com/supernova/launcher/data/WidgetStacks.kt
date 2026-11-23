@@ -11,9 +11,16 @@ object WidgetStacks {
     // the indicator stops being readable long before it.
     const val MAX_MEMBERS = 12
 
-    fun order(item: LauncherItem): List<WidgetStackMember> =
-        listOf(WidgetStackMember(item.appWidgetId, item.widgetProvider.orEmpty(), item.userSerial)) +
-            item.widgetStack
+    // The primary counts only when it is bound: a restore can leave the head
+    // unbound while members are still there, and a null head is not a member.
+    fun order(item: LauncherItem): List<WidgetStackMember> {
+        val head = if (item.appWidgetId != null) {
+            listOf(WidgetStackMember(item.appWidgetId, item.widgetProvider.orEmpty(), item.userSerial))
+        } else {
+            emptyList()
+        }
+        return head + item.widgetStack
+    }
 
     fun move(order: List<WidgetStackMember>, from: Int, to: Int): List<WidgetStackMember> {
         if (from !in order.indices || to !in order.indices || from == to) return order

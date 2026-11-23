@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One member of a stack in Manage stack: the provider's icon and name, the
+     arrows that move it in the order, and the button that takes it out. The
+     line under the name says Front on the widget the cell is showing, and is
+     empty otherwise so every row is the same height. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="@dimen/space_ms"
+    android:layout_marginBottom="@dimen/space_xs"
+    android:background="@drawable/bg_picker_card"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/space_md"
+    android:paddingTop="@dimen/space_xs"
+    android:paddingEnd="@dimen/space_xs"
+    android:paddingBottom="@dimen/space_xs">
+
+    <ImageView
+        android:id="@+id/memberIcon"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:contentDescription="@string/app_icon" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_md"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <com.supernova.launcher.ui.FadingTextView
+            android:id="@+id/memberLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:textColor="@color/textPrimary"
+            android:textSize="@dimen/text_body"
+            tools:text="Calendar" />
+
+        <TextView
+            android:id="@+id/memberFront"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xxs"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?attr/colorAccentOnRaised"
+            android:textSize="@dimen/text_secondary"
+            tools:text="Front" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/memberMoveUp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/move_up"
+        android:src="@drawable/ic_stack_up"
+        app:tint="@color/textPrimary" />
+
+    <ImageButton
+        android:id="@+id/memberMoveDown"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/move_down"
+        android:src="@drawable/ic_stack_down"
+        app:tint="@color/textPrimary" />
+
+    <ImageButton
+        android:id="@+id/memberRemove"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/widget_remove_from_stack"
+        android:src="@drawable/ic_menu_remove_item"
+        app:tint="@color/textSecondary" />
+</LinearLayout>

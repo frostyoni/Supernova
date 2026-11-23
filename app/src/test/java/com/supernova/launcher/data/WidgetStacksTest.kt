@@ -73,6 +73,20 @@ class WidgetStacksTest {
     }
 
     @Test
+    fun anUnboundHeadIsNotAMember() {
+        val item = LauncherItem(
+            id = "w",
+            itemType = ItemType.WIDGET,
+            appWidgetId = null,
+            widgetProvider = null,
+            widgetStack = listOf(member(2), member(3))
+        )
+        assertEquals(listOf(2, 3), WidgetStacks.order(item).map { it.appWidgetId })
+        val none = LauncherItem(id = "w", itemType = ItemType.WIDGET)
+        assertTrue(WidgetStacks.order(none).isEmpty())
+    }
+
+    @Test
     fun outOfRangeMovesAndRemovalsAreNoOps() {
         val order = WidgetStacks.order(item(1, 2))
         assertEquals(order, WidgetStacks.move(order, 5, 0))

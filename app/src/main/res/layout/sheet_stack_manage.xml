@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Manage stack: every widget in a stack in its order, the primary first.
+     Each row carries its provider's icon and name, the arrows that move it
+     and the button that takes it out; the list scrolls, the title and Add
+     widget stay put. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingBottom="@dimen/space_md">
+
+    <include layout="@layout/sheet_handle" />
+
+    <TextView
+        android:id="@+id/stackTitle"
+        style="@style/SheetTitle"
+        android:paddingBottom="@dimen/space_sm"
+        tools:text="Stack (3)" />
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/stackScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <LinearLayout
+            android:id="@+id/stackRows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/space_sm" />
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- The last member taken out leaves nothing to list or to add to. -->
+    <TextView
+        android:id="@+id/stackEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="@dimen/space_ml"
+        android:paddingVertical="@dimen/space_lg"
+        android:text="@string/stack_manage_empty"
+        android:textColor="@color/textSecondary"
+        android:textSize="@dimen/text_body"
+        android:visibility="gone" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginHorizontal="@dimen/space_ml"
+        android:layout_marginTop="@dimen/space_sm"
+        android:background="@color/settingsDivider" />
+
+    <LinearLayout
+        android:id="@+id/addWidget"
+        style="@style/SheetRow"
+        android:minHeight="72dp">
+
+        <LinearLayout style="@style/SheetRowText">
+
+            <TextView
+                style="@style/SheetRowTitle"
+                android:layout_width="match_parent"
+                android:fontFamily="sans-serif-medium"
+                android:text="@string/stack_manage_add" />
+
+            <TextView
+                android:id="@+id/addWidgetHint"
+                style="@style/SheetRowSubtitle"
+                android:text="@string/stack_manage_add_desc" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

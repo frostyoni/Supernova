@@ -884,14 +884,18 @@ class LauncherRepository(private val context: Context) {
 
     // Switches which widget in a stack is in front.
     // Reorder the stack as one list, the primary included: the management
-    // sheet drags a row, and the head of the order becomes the primary.
-    suspend fun moveStackMember(itemId: String, from: Int, to: Int) {
+    // sheet moves a row, and the head of the order becomes the primary.
+    suspend fun moveStackMember(itemId: String, from: Int, to: Int, front: Int = -1) {
         mutate { current ->
             current.copy(
                 items = current.items.map { item ->
                     if (item.id == itemId && item.itemType == ItemType.WIDGET) {
                         val order = WidgetStacks.order(item)
-                        WidgetStacks.withOrder(item, WidgetStacks.move(order, from, to), item.widgetStackFront)
+                        WidgetStacks.withOrder(
+                            item,
+                            WidgetStacks.move(order, from, to),
+                            if (front >= 0) front else item.widgetStackFront
+                        )
                     } else {
                         item
                     }

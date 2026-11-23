@@ -40,6 +40,9 @@ class WidgetStackView(
     // A member that scrolls sideways itself asked for the stream: the stack
     // must not take it, or a calendar's week strip stops working.
     private var childClaimsStream = false
+    // Whether the showing member scrolls sideways, asked once on the press:
+    // the answer cannot change mid-gesture and the tree walk is not free.
+    private var frontScrolls = false
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 9f * resources.displayMetrics.density
@@ -250,12 +253,13 @@ class WidgetStackView(
                 // first move lost the race to ViewPager2 on ordinary swipes,
                 // which turned the page instead of the stack.
                 childClaimsStream = false
-                if (children.size > 1 && !frontScrollsHorizontally()) {
+                frontScrolls = frontScrollsHorizontally()
+                if (children.size > 1 && !frontScrolls) {
                     (parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
                 }
             }
             MotionEvent.ACTION_MOVE -> if (!tracking && children.size > 1 && !childClaimsStream &&
-                !frontScrollsHorizontally()
+                !frontScrolls
             ) {
                 val dx = ev.x - downX
                 val dy = ev.y - downY

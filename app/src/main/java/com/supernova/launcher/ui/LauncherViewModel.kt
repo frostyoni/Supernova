@@ -41,6 +41,7 @@ import com.supernova.launcher.data.Pref
 import com.supernova.launcher.data.PrefSpec
 import com.supernova.launcher.data.PrivateSpace
 import com.supernova.launcher.data.TabFolders
+import com.supernova.launcher.data.WidgetStacks
 import com.supernova.launcher.data.WorkspaceGeometry
 import com.supernova.launcher.data.imports.BackupFiles
 import com.supernova.launcher.data.imports.LayoutConverter
@@ -903,6 +904,20 @@ class LauncherViewModel(
 
     fun removeWidgetFromStack(itemId: String, memberFrontIndex: Int) =
         persist { repository.removeWidgetFromStack(itemId, memberFrontIndex) }
+
+    // The Manage stack sheet's reorder: the whole order in one write, with the
+    // front left on the widget it was on rather than on the position.
+    fun moveStackMember(itemId: String, from: Int, to: Int) = persist {
+        val current = repository.modelFlow.first().items.firstOrNull { it.id == itemId }
+        val front = WidgetStacks.frontAfterMove(from, to, current?.widgetStackFront ?: 0)
+        repository.moveStackMember(itemId, from, to, front)
+    }
+
+    // A stack member taken out by its place in the order, handing the caller
+    // the widget id it frees to release.
+    fun removeStackMemberAt(itemId: String, index: Int, onRemoved: (Int?) -> Unit) = persist {
+        onRemoved(repository.removeStackMemberAt(itemId, index))
+    }
 
     fun resizeWidget(
         itemId: String,

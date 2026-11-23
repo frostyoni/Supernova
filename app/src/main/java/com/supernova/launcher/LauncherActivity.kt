@@ -125,6 +125,7 @@ import com.supernova.launcher.ui.SearchBarPlacement
 import com.supernova.launcher.ui.SearchController
 import com.supernova.launcher.ui.ScrollEffect
 import com.supernova.launcher.ui.WorkspacePagerAdapter
+import com.supernova.launcher.ui.StackManageSheet
 import com.supernova.launcher.ui.theme.AccentColor
 import com.supernova.launcher.ui.theme.ThemeEngine
 import com.supernova.launcher.widget.WidgetResizeFrame
@@ -3654,6 +3655,13 @@ class LauncherActivity :
                     if (item.widgetStack.isNotEmpty() && item.widgetStackFront > 0) {
                         menu.addRow(getString(R.string.widget_remove_from_stack), R.drawable.ic_menu_remove_item) {
                             removeStackMember(item)
+                        }
+                    }
+                    // Every member, in the swipe order, reorderable and
+                    // removable in one place; Add to stack only ever appends.
+                    if (item.widgetStack.isNotEmpty()) {
+                        menu.addRow(getString(R.string.widget_manage_stack), R.drawable.ic_menu_sort) {
+                            StackManageSheet.show(this, lifecycleScope, viewModel, widgets, item)
                         }
                     }
                     // The quickmenu pair, for a widget that overlaps other

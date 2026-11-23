@@ -27,6 +27,14 @@
     <string name="widget_resize">Resize</string>
     <string name="widget_add_to_stack">Add to stack</string>
     <string name="widget_remove_from_stack">Remove from stack</string>
+    <string name="widget_manage_stack">Manage stack</string>
+    <!-- Manage stack: the sheet that lists a widget stack and reorders it. -->
+    <string name="stack_manage_title">Stack (%1$d)</string>
+    <string name="stack_manage_front">Front</string>
+    <string name="stack_manage_add">Add widget</string>
+    <string name="stack_manage_add_desc">Pick another widget for this stack</string>
+    <string name="stack_manage_full">A stack holds %1$d widgets</string>
+    <string name="stack_manage_empty">No widgets left in this stack. Remove it from the home screen to clear the cell.</string>
     <!-- Long-press menu of a home screen icon or folder: makes it 2x2 cells, its icon twice the size, and back. -->
     <string name="large_icon">Large icon</string>
     <string name="normal_icon">Normal icon</string>
