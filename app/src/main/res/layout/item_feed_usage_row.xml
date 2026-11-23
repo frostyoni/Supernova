@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One app under the usage card: icon, name, launch count, and a bar for
+     its share of the top app's count. Rows are added programmatically (<= 5);
+     FeedAdapter sets the bar's colors and weight at bind time. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:orientation="vertical"
+    android:paddingVertical="@dimen/space_xs">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/usageRowIcon"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:importantForAccessibility="no" />
+
+        <com.supernova.launcher.ui.FadingTextView
+            android:id="@+id/usageRowLabel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_ms"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:textSize="@dimen/text_secondary" />
+
+        <TextView
+            android:id="@+id/usageRowCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_sm"
+            android:textSize="@dimen/text_caption" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/usageRowBar"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:layout_marginTop="@dimen/space_xxs"
+        android:orientation="horizontal"
+        android:weightSum="1">
+
+        <View
+            android:id="@+id/usageRowFill"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+    </LinearLayout>
+</LinearLayout>

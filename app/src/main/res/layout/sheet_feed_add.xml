@@ -132,4 +132,27 @@
             android:layout_height="wrap_content"
             android:contentDescription="@string/feed_contacts_title" />
     </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/readyUsage"
+        style="@style/SheetRow">
+
+        <LinearLayout style="@style/SheetRowText">
+
+            <TextView
+                style="@style/SheetRowTitle"
+                android:layout_width="match_parent"
+                android:text="@string/feed_usage_title" />
+
+            <TextView
+                style="@style/SheetRowSubtitle"
+                android:text="@string/feed_show_usage" />
+        </LinearLayout>
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/readyUsageSwitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/feed_usage_title" />
+    </LinearLayout>
 </LinearLayout>
