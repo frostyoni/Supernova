@@ -37,7 +37,15 @@ class WidgetStackView(
     private var downX = 0f
     private var downY = 0f
     private var tracking = false
+    // A member that scrolls sideways itself asked for the stream: the stack
+    // must not take it, or a calendar's week strip stops working.
+    private var childClaimsStream = false
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 9f * resources.displayMetrics.density
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        color = 0xFFFFFFFF.toInt()
+    }
     private val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val gesture = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -140,23 +148,50 @@ class WidgetStackView(
         if (newFront == frontIndex || newFront !in children.indices) return
         val oldChild = children.getOrNull(frontIndex)?.hostView
         val newChild = children.getOrNull(newFront)?.hostView
+        // Which way the stack turned: forward wraps to the first, and the
+        // slide follows the finger rather than always going one way.
+        val forward = newFront > frontIndex || (frontIndex == children.size - 1 && newFront == 0)
+        val travel = width * SLIDE_FRACTION * (if (forward) -1f else 1f)
         frontIndex = newFront
 
         oldChild?.animate()
             ?.alpha(0f)
+            ?.translationX(travel)
             ?.setDuration(SWITCH_ANIMATION_MS)
-            ?.withEndAction { oldChild.visibility = View.INVISIBLE }
+            ?.withEndAction {
+                oldChild.visibility = View.INVISIBLE
+                oldChild.translationX = 0f
+            }
             ?.start()
 
         newChild?.alpha = 0f
+        newChild?.translationX = -travel
         newChild?.visibility = View.VISIBLE
         newChild?.animate()
             ?.alpha(1f)
+            ?.translationX(0f)
             ?.setDuration(SWITCH_ANIMATION_MS)
             ?.start()
 
         controller.onStackFrontChanged(item.id, frontIndex)
         invalidate()
+    }
+
+    // Whether the showing member scrolls sideways itself. Asked on the press,
+    // not on every move: the tree is small and the answer cannot change
+    // mid-gesture.
+    private fun frontScrollsHorizontally(): Boolean {
+        val root = children.getOrNull(frontIndex)?.hostView ?: return false
+        val pending = ArrayDeque<View>()
+        pending += root
+        while (pending.isNotEmpty()) {
+            val view = pending.removeFirst()
+            if (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1)) return true
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) pending += view.getChildAt(index)
+            }
+        }
+        return false
     }
 
     // Which widget is showing, as dots at the foot of the cell. Drawn over
@@ -169,7 +204,13 @@ class WidgetStackView(
         val density = resources.displayMetrics.density
         val radius = 2.2f * density
         val gap = 7f * density
-        val total = count * radius * 2 + (count - 1) * gap
+        // Past a handful the dots stop being countable, so the tail becomes a
+        // number: which one is showing still reads at a glance.
+        val dots = minOf(count, MAX_DOTS)
+        val overflow = count - dots
+        val suffix = if (overflow > 0) "+$overflow" else ""
+        val suffixWidth = if (suffix.isEmpty()) 0f else countPaint.measureText(suffix) + gap
+        val total = dots * radius * 2 + (dots - 1) * gap + suffixWidth
         val left = width / 2f - total / 2f
         val centreY = height - 10f * density
         pillPaint.color = PILL_COLOR
@@ -178,9 +219,23 @@ class WidgetStackView(
             left + total + 7f * density, centreY + radius + 4f * density,
             radius + 4f * density, radius + 4f * density, pillPaint
         )
-        for (index in 0 until count) {
-            dotPaint.color = if (index == frontIndex) ACTIVE_DOT else INACTIVE_DOT
-            canvas.drawCircle(left + radius + index * (radius * 2 + gap), centreY, radius, dotPaint)
+        for (index in 0 until dots) {
+            // With an overflow the last dot stands for the tail, and lights
+            // when the front is out there.
+            val active = if (overflow > 0 && index == dots - 1) frontIndex >= dots - 1 else index == frontIndex
+            dotPaint.color = if (active) ACTIVE_DOT else INACTIVE_DOT
+            canvas.drawCircle(
+                left + radius + index * (radius * 2 + gap), centreY,
+                if (active) radius * 1.25f else radius, dotPaint
+            )
+        }
+        if (suffix.isNotEmpty()) {
+            canvas.drawText(
+                suffix,
+                left + dots * (radius * 2 + gap),
+                centreY + countPaint.textSize * 0.36f,
+                countPaint
+            )
         }
     }
 
@@ -194,11 +249,14 @@ class WidgetStackView(
                 // Claim the stream from the pager at once. Waiting for the
                 // first move lost the race to ViewPager2 on ordinary swipes,
                 // which turned the page instead of the stack.
-                if (children.size > 1) {
+                childClaimsStream = false
+                if (children.size > 1 && !frontScrollsHorizontally()) {
                     (parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
                 }
             }
-            MotionEvent.ACTION_MOVE -> if (!tracking && children.size > 1) {
+            MotionEvent.ACTION_MOVE -> if (!tracking && children.size > 1 && !childClaimsStream &&
+                !frontScrollsHorizontally()
+            ) {
                 val dx = ev.x - downX
                 val dy = ev.y - downY
                 // Claim clearly-horizontal drags. Steeper movement is left to
@@ -238,13 +296,12 @@ class WidgetStackView(
         return handled || tracking || super.onTouchEvent(ev)
     }
 
-    // Ignore disallow requests: the stack must keep the horizontal stream so it
-    // can switch widgets, while the intercept rule above still lets vertical
-    // scrolls pass because they don't meet the horizontal threshold. This is
-    // the simplest robust choice for a two-widget MVP; nested horizontally
-    // scrolling widgets inside a stack member will be interrupted.
+    // A member asking for the stream gets it: the stack stops claiming
+    // horizontal moves for this gesture, and the request goes on up so the
+    // page pager leaves it alone too.
     override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
-        // Deliberately do not propagate: we own horizontal arbitration.
+        if (disallowIntercept) childClaimsStream = true
+        super.requestDisallowInterceptTouchEvent(disallowIntercept)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -275,6 +332,8 @@ class WidgetStackView(
         private const val MIN_FLING_VELOCITY = 500f
         private const val SWITCH_ANIMATION_MS = 150L
         private const val HORIZONTAL_DOMINANCE = 1.5f
+        private const val SLIDE_FRACTION = 0.22f
+        private const val MAX_DOTS = 7
         private const val PILL_COLOR = 0x33000000
         private const val ACTIVE_DOT = 0xFFFFFFFF.toInt()
         private const val INACTIVE_DOT = 0x66FFFFFF

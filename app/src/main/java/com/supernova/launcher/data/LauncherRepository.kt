@@ -883,6 +883,46 @@ class LauncherRepository(private val context: Context) {
     }
 
     // Switches which widget in a stack is in front.
+    // Reorder the stack as one list, the primary included: the management
+    // sheet drags a row, and the head of the order becomes the primary.
+    suspend fun moveStackMember(itemId: String, from: Int, to: Int) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        val order = WidgetStacks.order(item)
+                        WidgetStacks.withOrder(item, WidgetStacks.move(order, from, to), item.widgetStackFront)
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    // Remove by position in the same ordered list, returning the widget id to
+    // release. The front stays on its own widget where it still is.
+    suspend fun removeStackMemberAt(itemId: String, index: Int): Int? {
+        var removedId: Int? = null
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        val order = WidgetStacks.order(item)
+                        if (index !in order.indices) return@map item
+                        removedId = order[index].appWidgetId
+                        val next = WidgetStacks.remove(order, index)
+                        val front = WidgetStacks.frontAfterRemove(order, index, item.widgetStackFront)
+                        WidgetStacks.withOrder(item, next, front)
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+        return removedId
+    }
+
     suspend fun setWidgetStackFront(itemId: String, frontIndex: Int) {
         mutate { current ->
             current.copy(
@@ -1696,7 +1736,7 @@ class LauncherRepository(private val context: Context) {
         // Shared with the surfaces that offer an add-page control.
         const val MAX_PAGES = 9
         // Two widgets total per stack: the primary plus this many members.
-        const val MAX_WIDGET_STACK_MEMBERS = 1
+        const val MAX_WIDGET_STACK_MEMBERS = WidgetStacks.MAX_MEMBERS - 1
         // The top of the Widget padding bar, which a widget's own padding
         // shares.
         const val MAX_WIDGET_PADDING_DP = 24
