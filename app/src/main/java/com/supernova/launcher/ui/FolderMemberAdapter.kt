@@ -78,6 +78,7 @@ class FolderMemberAdapter(
         binding.root.layoutParams = binding.root.layoutParams.apply {
             width = if (cellWidthPx > 0) cellWidthPx else ViewGroup.LayoutParams.MATCH_PARENT
         }
+        labelPrefs?.let { if (Animations.enabled(it)) ItemPress.attach(binding.root) }
         return MemberViewHolder(binding)
     }
 

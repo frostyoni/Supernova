@@ -39,6 +39,10 @@ class SearchResultsAdapter(
     private val pausedProfiles: () -> Set<Long> = { emptySet() }
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
+    // The top hit the sheet last rose into place. Slower providers re-submit
+    // the same one; only a new answer animates.
+    private var lastTopKey: List<Any>? = null
+
     private fun iconFor(app: LaunchableApp) =
         PausedIcon.of(appCatalog.iconFor(app), app.userSerial in pausedProfiles())
 
@@ -366,6 +370,27 @@ class SearchResultsAdapter(
             }
             // A pill dragged out was hidden for the drag.
             for (i in 0 until flow.childCount) flow.getChildAt(i).alpha = 1f
+            // A new top hit rises a little into place - the row is the answer
+            // the query was for, and the eye should land on it. The same hit
+            // re-submitted does not animate again.
+            val topKey = listOf(hit.app.userSerial, hit.app.packageName, hit.app.className)
+            if (topKey != lastTopKey) {
+                lastTopKey = topKey
+                val density = binding.root.resources.displayMetrics.density
+                binding.root.animate().cancel()
+                binding.root.translationY = 6f * density
+                binding.root.alpha = 0f
+                binding.root.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(170L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            } else {
+                binding.root.animate().cancel()
+                binding.root.translationY = 0f
+                binding.root.alpha = 1f
+            }
             val hasShortcuts = hit.shortcuts.isNotEmpty()
             binding.topHitDivider.visibility = if (hasShortcuts) View.VISIBLE else View.GONE
             flow.visibility = if (hasShortcuts) View.VISIBLE else View.GONE

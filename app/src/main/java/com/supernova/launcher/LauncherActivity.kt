@@ -5020,6 +5020,7 @@ class LauncherActivity :
             true
         }
         attachIconSwipe(iconBinding.root, item)
+        if (Animations.enabled(prefs)) com.supernova.launcher.ui.ItemPress.attach(iconBinding.root)
         itemMoves.attach(iconBinding.root, item.id)
         if (swipeToOpen) {
             // A tap no longer opens it, so a screen reader gets the swipe as

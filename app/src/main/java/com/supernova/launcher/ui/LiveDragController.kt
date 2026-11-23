@@ -1530,6 +1530,8 @@ class LiveDragController(
         val duration = Animations.duration(prefs, WIGGLE_MS)
         if (duration == 0L) return
         forEachWorkspaceIcon { index, view ->
+            val rampMs = (duration.toFloat() * WIGGLE_RAMP_FRACTION).toLong().coerceAtLeast(1L)
+            var self: android.animation.ObjectAnimator? = null
             val animator = android.animation.ObjectAnimator.ofFloat(
                 view, "rotation", -WIGGLE_DEGREES, WIGGLE_DEGREES
             ).apply {
@@ -1537,7 +1539,17 @@ class LiveDragController(
                 repeatCount = android.animation.ValueAnimator.INFINITE
                 repeatMode = android.animation.ValueAnimator.REVERSE
                 startDelay = (index % 3) * (duration / 3)
+                // Ease the swing in: the first frames are a fraction of the
+                // angle, so edit mode starts rather than snapping into a full
+                // rock.
+                setEvaluator(android.animation.TypeEvaluator<Float> { fraction, start, end ->
+                    val played = ((self?.currentPlayTime ?: 0L) - (self?.startDelay ?: 0L))
+                        .coerceAtLeast(0L)
+                    val ramp = (played / rampMs.toFloat()).coerceIn(0f, 1f)
+                    (start + (end - start) * fraction) * ramp
+                })
             }
+            self = animator
             animator.start()
             wiggleAnimators += animator
         }
@@ -1709,6 +1721,7 @@ class LiveDragController(
         // making the grid look broken.
         private const val WIGGLE_DEGREES = 2.5f
         private const val WIGGLE_MS = 140L
+        private const val WIGGLE_RAMP_FRACTION = 0.16f
 
         // Drop-zone hover tint (accent-free so it reads on any wallpaper).
         private const val DROP_ZONE_HIGHLIGHT = 0x33FFFFFF
