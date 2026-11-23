@@ -1,10 +1,12 @@
 package com.supernova.launcher.ui
 
+import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.widget.TextView
 import com.supernova.launcher.R
+import com.supernova.launcher.data.LabelFontStore
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.SettingEnumSerializer
 import com.supernova.launcher.ui.theme.Styles
@@ -16,7 +18,10 @@ enum class LabelFont {
     DEFAULT,
     CONDENSED,
     SERIF,
-    MONOSPACE;
+    MONOSPACE,
+
+    // The file picked in Settings, filling every label surface at once.
+    CUSTOM;
 
     // Its name in the store and in a backup, read back leniently.
     object Names : SettingEnumSerializer<LabelFont>("LabelFont", entries, DEFAULT)
@@ -31,16 +36,25 @@ enum class LabelFont {
 object LabelStyler {
 
     // Typeface.create walks font families; resolve each font exactly once.
+    // CUSTOM is the exception: its face comes from the stored file, which the
+    // store caches and re-reads when that file changes.
     private val typefaces = EnumMap<LabelFont, Typeface>(LabelFont::class.java)
 
-    private fun typefaceFor(font: LabelFont): Typeface = typefaces.getOrPut(font) {
-        when (font) {
-            LabelFont.DEFAULT -> Typeface.SANS_SERIF
-            LabelFont.CONDENSED -> Typeface.create("sans-serif-condensed", Typeface.NORMAL)
-            LabelFont.SERIF -> Typeface.SERIF
-            LabelFont.MONOSPACE -> Typeface.MONOSPACE
+    private fun typefaceFor(font: LabelFont, context: Context): Typeface =
+        if (font == LabelFont.CUSTOM) {
+            // A file that no longer loads reads as Default rather than
+            // leaving a label without a face.
+            LabelFontStore.typeface(context) ?: Typeface.SANS_SERIF
+        } else {
+            typefaces.getOrPut(font) {
+                when (font) {
+                    LabelFont.CONDENSED -> Typeface.create("sans-serif-condensed", Typeface.NORMAL)
+                    LabelFont.SERIF -> Typeface.SERIF
+                    LabelFont.MONOSPACE -> Typeface.MONOSPACE
+                    else -> Typeface.SANS_SERIF
+                }
+            }
         }
-    }
 
     // Labels drawn over the wallpaper stay light in both themes; labels on an
     // app surface read like the rest of that surface's text, its style's
@@ -72,7 +86,7 @@ object LabelStyler {
         val size = (override.size ?: prefs.labelSize).coerceIn(9, 18)
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size.toFloat())
         view.setTextColor(parseColor(prefs.labelColor, fallback))
-        view.typeface = typefaceFor(override.font?.let(LabelFont::fromName) ?: prefs.labelFont)
+        view.typeface = typefaceFor(override.font?.let(LabelFont::fromName) ?: prefs.labelFont, view.context)
         // Each surface declares its own maxLines in XML; remember that value
         // on the view so single-line can be undone on a recycled bind.
         val surfaceMax = view.getTag(R.id.tag_default_max_lines) as? Int

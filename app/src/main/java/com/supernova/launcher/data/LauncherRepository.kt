@@ -5,6 +5,7 @@ import android.content.res.Resources
 import androidx.datastore.preferences.core.edit
 import com.supernova.launcher.R
 import com.supernova.launcher.runLogged
+import com.supernova.launcher.ui.LabelFont
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -981,7 +982,10 @@ class LauncherRepository(private val context: Context) {
             exportedAtEpochMs = System.currentTimeMillis(),
             model = model,
             prefs = prefs,
-            customTransition = CustomTransitionStore.raw(context) ?: ""
+            customTransition = CustomTransitionStore.raw(context) ?: "",
+            // The font's bytes, so a backup restores the labels it showed
+            // rather than whatever this install happens to have.
+            customFontBase64 = withContext(Dispatchers.IO) { LabelFontStore.exportBase64(context) }
         )
         json.encodeToString(payload)
     }
@@ -1033,6 +1037,20 @@ class LauncherRepository(private val context: Context) {
             prefs?.get("folderSortAz")?.jsonPrimitive?.booleanOrNull
         }.getOrNull() == true
         return if (on) payload.copy(model = FolderSort.allSorted(payload.model)) else payload
+    }
+
+    // A backup's custom font: absent (an export from before it) leaves the
+    // installed one alone, blank removes it, and bytes that don't store leave
+    // the labels on Default. Nothing here touches the prefs unless the
+    // payload carries the field.
+    private fun withCustomFont(payload: BackupPayload, prefs: LauncherPrefs): LauncherPrefs {
+        val base64 = payload.customFontBase64 ?: return prefs
+        if (base64.isBlank()) {
+            LabelFontStore.clear(context)
+            return prefs.copy(labelFont = LabelFont.DEFAULT)
+        }
+        val stored = LabelFontStore.importBase64(context, base64) == LabelFontStore.Result.STORED
+        return if (stored) prefs else prefs.copy(labelFont = LabelFont.DEFAULT)
     }
 
     // Another launcher's home screen in place of this one: its icons, folders
@@ -1091,7 +1109,6 @@ class LauncherRepository(private val context: Context) {
         } else {
             payload.prefs.copy(searchBarWidgetId = 0, searchBarWidgetProvider = "")
         }
-
         // What is being replaced stays recoverable from Automatic backups, as
         // Reset's does: without that snapshot, no import. Written under the
         // lock, so no layout edit lands in between and is lost.
@@ -1101,9 +1118,14 @@ class LauncherRepository(private val context: Context) {
             if (snapshotFirst) {
                 check(writeAutoBackup(currentPrefs)) { "couldn't save a backup of the current layout first" }
             }
+            // The font goes in after that snapshot, which has to carry the one
+            // being replaced, and before the prefs that name the new one: a
+            // file that doesn't load leaves Default rather than a name with
+            // nothing behind it.
+            val fontPrefs = withCustomFont(payload, restoredPrefs)
             context.supernovaStore.edit { prefs ->
                 prefs[StoreKeys.model] = json.encodeToString(validated)
-                LauncherPreferences.writeAll(prefs, restoredPrefs)
+                LauncherPreferences.writeAll(prefs, fontPrefs)
                 prefs.remove(StoreKeys.retiredFolderSortAz)
             }
             // The transition the home swipes with is part of the state being

@@ -403,5 +403,6 @@ object EnumLabels {
         LabelFont.CONDENSED -> R.string.font_condensed
         LabelFont.SERIF -> R.string.font_serif
         LabelFont.MONOSPACE -> R.string.font_monospace
+        LabelFont.CUSTOM -> R.string.font_custom
     }
 }

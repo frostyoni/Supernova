@@ -724,6 +724,15 @@
     <string name="font_condensed">Condensed</string>
     <string name="font_serif">Serif</string>
     <string name="font_monospace">Monospace</string>
+    <!-- A label font from a file the user picked (.ttf/.otf). -->
+    <string name="font_custom">Custom</string>
+    <string name="custom_font">Custom font</string>
+    <string name="custom_font_none">No file picked</string>
+    <string name="custom_font_unnamed">Font file</string>
+    <string name="custom_font_remove">Remove custom font</string>
+    <string name="custom_font_too_big">That file is over 4 MB. Pick a smaller font.</string>
+    <string name="custom_font_failed">That file isn\'t a font Android can load.</string>
+    <string name="custom_font_removed">Custom font removed</string>
     <string name="dock_infinite_scroll">Infinite scroll</string>
     <string name="dock_match_desktop">Match desktop icon size</string>
     <string name="dock_overlay">Display as overlay</string>
