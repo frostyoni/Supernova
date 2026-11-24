@@ -796,7 +796,8 @@ class SettingsPreviewView @JvmOverloads constructor(
                 context,
                 if (night) com.supernova.launcher.data.IconGlass.SMOKED
                 else com.supernova.launcher.data.IconGlass.FROSTED,
-                dp(prefs.dockBgRadius).toFloat()
+                dp(prefs.dockBgRadius).toFloat(),
+                lowSpec = prefs.lowSpec
             ).also {
                 it.alpha = maxOf(android.graphics.Color.alpha(resolved.surface), (0.55f * 255).toInt())
             }

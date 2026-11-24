@@ -162,6 +162,10 @@ object Pref {
     val dockCount = int("dock_count", DOCK_COUNT_MIN..GridLimits.DOCK_BIG)
     // Fill the dock's empty slots with apps used recently.
     val dockSuggestions = bool("dock_suggestions")
+    // Strip the heavy work: animations, wallpaper zoom, the glass shader.
+    val lowSpec = bool("low_spec")
+    // The drawer's fast scroller on the left, for a left thumb.
+    val leftHanded = bool("left_handed")
     val iconScale = float("icon_scale", ICON_SCALE_MIN..ICON_SCALE_MAX)
     val showLabels = bool("show_labels")
     val wallpaperScroll = bool("wallpaper_scroll")

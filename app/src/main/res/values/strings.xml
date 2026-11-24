@@ -779,6 +779,10 @@
     <string name="labs">Labs</string>
     <string name="group_home_button">Home button</string>
     <string name="section_labs_subtitle">Experiments and icon theme tools</string>
+    <string name="labs_low_spec">Low-spec mode</string>
+    <string name="labs_low_spec_summary">No animations, no wallpaper zoom, and the dock glass stops using the shader</string>
+    <string name="left_handed">Left-handed</string>
+    <string name="left_handed_summary">Put the drawer\'s fast scroller on the left</string>
     <string name="labs_show_component">Show component in edit dialog</string>
     <string name="labs_show_component_summary">Show the component name in the app edit sheet</string>
     <string name="labs_big_grid">Big grid size options</string>

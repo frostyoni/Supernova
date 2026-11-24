@@ -214,6 +214,10 @@ data class LauncherPrefs(
     val dockEnabled: Boolean = true,
     // Fill empty dock slots with the apps used most recently.
     val dockSuggestions: Boolean = false,
+    // Fewer animations and no heavy glass: for older or slower phones.
+    val lowSpec: Boolean = false,
+    // The drawer's fast scroller sits on the left.
+    val leftHanded: Boolean = false,
     // Dock rank space is page * dockCount + slot; extra pages swipe in place.
     val dockPages: Int = 1,
     val dockBgStyle: DockBgStyle = DockBgStyle.NONE,

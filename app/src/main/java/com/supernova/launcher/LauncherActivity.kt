@@ -1925,6 +1925,7 @@ class LauncherActivity :
                         }
                     )
                     applySystemChrome(state.prefs)
+                    applyHandedness(state.prefs)
                     feed.onPrefs(state.prefs)
                     // Everything above needs no icons, so it runs as soon as
                     // the persisted state decodes. Everything below binds
@@ -2500,6 +2501,38 @@ class LauncherActivity :
         applyDockChrome(viewModel.state.value.prefs)
     }
 
+    // Left-handed mode puts the drawer's fast scroller - and its letter
+    // bubble - on the left, where a left thumb can reach. The scroller draws
+    // for a right edge; mirroring the view moves its track to the new edge
+    // and the framework maps touches through the same transform.
+    private fun applyHandedness(prefs: LauncherPrefs) {
+        val side = if (prefs.leftHanded) Gravity.START else Gravity.END
+        val scroller = binding.drawerFastScroller
+        val params = scroller.layoutParams as? FrameLayout.LayoutParams
+        if (params != null && params.gravity != side) {
+            params.gravity = side
+            scroller.layoutParams = params
+        }
+        val mirror = if (prefs.leftHanded) -1f else 1f
+        if (scroller.scaleX != mirror) scroller.scaleX = mirror
+        val bubble = binding.drawerFastScrollBubble
+        val bubbleParams = bubble.layoutParams as? FrameLayout.LayoutParams
+        if (bubbleParams != null) {
+            val want = Gravity.TOP or side
+            val margin = resources.getDimensionPixelSize(R.dimen.space_ml)
+            val start = if (prefs.leftHanded) margin else 0
+            val end = if (prefs.leftHanded) 0 else margin
+            if (bubbleParams.gravity != want || bubbleParams.marginStart != start ||
+                bubbleParams.marginEnd != end
+            ) {
+                bubbleParams.gravity = want
+                bubbleParams.marginStart = start
+                bubbleParams.marginEnd = end
+                bubble.layoutParams = bubbleParams
+            }
+        }
+    }
+
     private fun applyDockChrome(prefs: LauncherPrefs) {
         val key = listOf(
             prefs.dockEnabled, prefs.dockBgStyle, prefs.dockBgOpacity, prefs.dockBgRadius,
@@ -2714,7 +2747,8 @@ class LauncherActivity :
                     this,
                     if (night) com.supernova.launcher.data.IconGlass.SMOKED
                     else com.supernova.launcher.data.IconGlass.FROSTED,
-                    dp(prefs.dockBgRadius).toFloat()
+                    dp(prefs.dockBgRadius).toFloat(),
+                    lowSpec = prefs.lowSpec
                 ).also {
                     // Glass needs to read as a surface even at the dock's
                     // usual low opacity; the slider can only add to that.

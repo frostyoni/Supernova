@@ -45,7 +45,9 @@ class LiquidGlassDrawable @JvmOverloads constructor(
     private val glass: IconGlass = IconGlass.CLEAR,
     radius: Float = 0f,
     private val veilColor: Int = Color.WHITE,
-    private val veilAlpha: Float = DEFAULT_VEIL_ALPHA
+    private val veilAlpha: Float = DEFAULT_VEIL_ALPHA,
+    // Low-spec: a plain painted pane, no shader and no wallpaper sampling.
+    private val lowSpec: Boolean = false
 ) : Drawable() {
 
     private val application = context.applicationContext
@@ -69,7 +71,7 @@ class LiquidGlassDrawable @JvmOverloads constructor(
     // where the system still gives it and repaint once it lands. On 13 and up
     // this is a no-op and the colour wash draws at once.
     init {
-        WallpaperBlur.warm(application) { invalidateGlass() }
+        if (!lowSpec) WallpaperBlur.warm(application) { invalidateGlass() }
     }
 
     // In px, as GlassPillDrawable's: a caller passes dp * density. Setting it
@@ -109,7 +111,7 @@ class LiquidGlassDrawable @JvmOverloads constructor(
         val canvas = Canvas(bitmap)
         // Read before the pane is painted, so the generation stamped below is
         // the one this picture came from.
-        val wallpaper = WallpaperBlur.get(application)
+        val wallpaper = if (lowSpec) null else WallpaperBlur.get(application)
         val density = application.resources.displayMetrics.density
         val smoked = night || glass == com.supernova.launcher.data.IconGlass.SMOKED
         com.supernova.launcher.data.GlassOptics.draw(
@@ -125,7 +127,7 @@ class LiquidGlassDrawable @JvmOverloads constructor(
                 fresnel = if (smoked) 0.4f else 0.6f,
                 specular = if (smoked) 0.3f else 0.45f
             ),
-            wallpaper ?: colourField()
+            if (lowSpec) null else wallpaper ?: colourField()
         )
         cachedGeneration = WallpaperBlur.generation
         return bitmap

@@ -809,6 +809,13 @@ object SettingsCatalogue {
             R.string.settings_section_drawer,
             listOf(
                 SettingItem.Preview(PreviewKind.DRAWER),
+                // The fast scroller on the left, under a left thumb.
+                SettingItem.Toggle(
+                    R.string.left_handed,
+                    get = { it.leftHanded },
+                    set = { viewModel.set(Pref.leftHanded, it) },
+                    subtitle = R.string.left_handed_summary
+                ),
                 rows.choice(
                     R.string.drawer_style, DrawerStyle.entries,
                     { it.drawerStyle }, { EnumLabels.of(it) }
@@ -1985,6 +1992,13 @@ object SettingsCatalogue {
         SettingsSection(
             R.string.labs,
             listOf(
+                // Fewer things to draw and animate, for an older phone.
+                SettingItem.Toggle(
+                    R.string.labs_low_spec,
+                    get = { it.lowSpec },
+                    set = { viewModel.set(Pref.lowSpec, it) },
+                    subtitle = R.string.labs_low_spec_summary
+                ),
                 SettingItem.Toggle(
                     R.string.labs_show_component,
                     get = { it.labsShowComponent },
