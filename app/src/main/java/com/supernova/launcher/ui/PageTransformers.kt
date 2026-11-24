@@ -46,8 +46,7 @@ object PageTransformers {
 
     fun forEffect(
         effect: ScrollEffect,
-        custom: CustomTransition? = null,
-        direction: ScrollDirection? = null
+        custom: CustomTransition? = null
     ): ViewPager2.PageTransformer? {
         val transform: (View, Float) -> Unit = when (effect) {
             ScrollEffect.NONE -> return null
@@ -70,10 +69,13 @@ object PageTransformers {
             ScrollEffect.PUSH -> ::push
             ScrollEffect.PARALLAX -> ::parallax
             ScrollEffect.SWING -> ::swing
-            ScrollEffect.CUSTOM -> { page, position ->
-                applyCustom(page, position, custom, direction?.value ?: 1)
-            }
+            // Handled in the wrapper below, which knows each page's role.
+            ScrollEffect.CUSTOM -> { _, _ -> }
         }
+        // Where each page was last seen, for the custom effect's roles: a
+        // page's own distance says whether it is arriving or leaving, which
+        // neither its sign nor the pager's direction does (see PageRoles).
+        val distances = java.util.WeakHashMap<View, Float>()
         return ViewPager2.PageTransformer { page, position ->
             // A page a whole page or more away is out of view in a plain
             // slide, and no effect may bring it back. Home pages are see-
@@ -90,8 +92,13 @@ object PageTransformers {
             // edit mode, or the menu of an icon on the hidden page, whose
             // Remove took that unseen icon while the one in view stayed.
             if (abs(position) >= 1f) {
+                if (effect == ScrollEffect.CUSTOM) distances[page] = abs(position).coerceIn(0f, 1f)
                 resetTransforms(page)
                 page.alpha = 0f
+            } else if (effect == ScrollEffect.CUSTOM) {
+                val distance = abs(position).coerceIn(0f, 1f)
+                val previous = distances.put(page, distance)
+                applyCustom(page, position, custom, PageRoles.arriving(previous, distance))
             } else {
                 page.alpha = 1f
                 transform(page, position)
@@ -101,11 +108,11 @@ object PageTransformers {
 
     // A Labs spec's frame. The lane is chosen by ROLE, not by which side the
     // page is on: the arriving page reads the incoming lane and the departing
-    // one the outgoing lane, whichever way the finger goes. Picking by sign
-    // gave the departing page the incoming lane on a backward swipe, so it
-    // never faded and the wrapper's reset a page away cut it off in plain
-    // sight. TransitionMath owns the role, the mirror and the fade.
-    private fun applyCustom(page: View, position: Float, spec: CustomTransition?, direction: Int) {
+    // one the outgoing lane, whichever way the finger goes. The role comes
+    // from the page's own distance trend (PageRoles), because a backward drag
+    // looks like a forward one to the pager. TransitionMath owns the mirror
+    // and the fade.
+    private fun applyCustom(page: View, position: Float, spec: CustomTransition?, arriving: Boolean) {
         if (spec == null) {
             simple(page, position)
             return
@@ -115,7 +122,6 @@ object PageTransformers {
             page.alpha = 1f
             return
         }
-        val arriving = (position > 0f) == (direction >= 0)
         val applied = TransitionMath.apply(spec, position, arriving)
         page.translationX = applied.moveX * page.width
         page.translationY = applied.moveY * page.height

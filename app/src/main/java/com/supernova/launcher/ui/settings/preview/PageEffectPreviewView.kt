@@ -30,7 +30,6 @@ class PageEffectPreviewView(
         clipChildren = true
     }
 
-    private val direction = com.supernova.launcher.ui.ScrollDirection(pager)
     private var effect: ScrollEffect = ScrollEffect.NONE
     private var custom: CustomTransition? = null
 
@@ -84,7 +83,7 @@ class PageEffectPreviewView(
             (pager.getChildAt(0) as? RecyclerView)?.let { recycler ->
                 for (index in 0 until recycler.childCount) PageTransformers.resetTransforms(recycler.getChildAt(index))
             }
-            pager.setPageTransformer(PageTransformers.forEffect(effect, spec, direction))
+            pager.setPageTransformer(PageTransformers.forEffect(effect, spec))
         }
         if (replay) replay()
     }
