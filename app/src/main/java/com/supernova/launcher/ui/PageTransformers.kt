@@ -72,10 +72,10 @@ object PageTransformers {
             // Handled in the wrapper below, which knows each page's role.
             ScrollEffect.CUSTOM -> { _, _ -> }
         }
-        // Where each page was last seen, for the custom effect's roles: a
-        // page's own distance says whether it is arriving or leaving, which
-        // neither its sign nor the pager's direction does (see PageRoles).
-        val distances = java.util.WeakHashMap<View, Float>()
+        // Each page's last distance and role, for the custom effect: a page's
+        // own distance trend says whether it is arriving or leaving, and the
+        // role keeps still through a pause (see PageRoles).
+        val roles = java.util.WeakHashMap<View, PageRoles.State>()
         return ViewPager2.PageTransformer { page, position ->
             // A page a whole page or more away is out of view in a plain
             // slide, and no effect may bring it back. Home pages are see-
@@ -92,13 +92,16 @@ object PageTransformers {
             // edit mode, or the menu of an icon on the hidden page, whose
             // Remove took that unseen icon while the one in view stayed.
             if (abs(position) >= 1f) {
-                if (effect == ScrollEffect.CUSTOM) distances[page] = abs(position).coerceIn(0f, 1f)
+                if (effect == ScrollEffect.CUSTOM) {
+                    val distance = abs(position).coerceIn(0f, 1f)
+                    roles.getOrPut(page) { PageRoles.State(null, distance) }.park(distance)
+                }
                 resetTransforms(page)
                 page.alpha = 0f
             } else if (effect == ScrollEffect.CUSTOM) {
                 val distance = abs(position).coerceIn(0f, 1f)
-                val previous = distances.put(page, distance)
-                applyCustom(page, position, custom, PageRoles.arriving(previous, distance))
+                val state = roles.getOrPut(page) { PageRoles.State(null, distance) }
+                applyCustom(page, position, custom, state.moveTo(distance))
             } else {
                 page.alpha = 1f
                 transform(page, position)
