@@ -1770,6 +1770,7 @@ class LauncherActivity :
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.launchGeneration.collect {
                     if (drawer.isVisible) drawer.refreshFrequentRow()
+                    if (viewModel.state.value.prefs.dockSuggestions) renderDock(viewModel.state.value)
                 }
             }
         }
@@ -2161,6 +2162,17 @@ class LauncherActivity :
         // authoritative once there is one; before that the window minus the
         // dock's own margins is the same number.
         dockSlotWidthPx = dockContentWidth(prefs) / prefs.dockCount.coerceAtLeast(1)
+        // Empty slots on the main page can suggest apps used recently. They
+        // are ordinary icons: tapping opens the app, long-pressing arms the
+        // drawer's drag, so one can be dragged into the dock to keep it.
+        val suggestionSlots = if (prefs.dockSuggestions && dockPage == 0) {
+            (0 until prefs.dockCount).count { dockByRank[rankBase + it] == null }
+        } else {
+            0
+        }
+        val suggestions =
+            if (suggestionSlots > 0) viewModel.dockSuggestions(suggestionSlots) else emptyList()
+        var suggestionAt = 0
         // An empty dock still has to be a drop target, so it never collapses
         // below a bare icon column even with every slot empty.
         binding.dockBar.minimumHeight = dockIconBoxPx(prefs) +
@@ -2183,7 +2195,8 @@ class LauncherActivity :
                 setTag(R.id.tag_dock_rank, rank)
             }
 
-            dockByRank[rank]?.let { item ->
+            val item = dockByRank[rank]
+            if (item != null) {
                 val itemView = viewForItem(item)
                 if (itemView.parent != null) {
                     (itemView.parent as? ViewGroup)?.removeView(itemView)
@@ -2194,6 +2207,11 @@ class LauncherActivity :
                 itemView.alpha = if (drag.isSettling(item.id)) 0f else 1f
                 slot.addView(
                     itemView,
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                )
+            } else if (suggestionAt < suggestions.size) {
+                slot.addView(
+                    dockSuggestionView(suggestions[suggestionAt++]),
                     FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 )
             }
@@ -2209,6 +2227,44 @@ class LauncherActivity :
         // after the slots: the height it spaces from is theirs.
         applyDockChrome(prefs)
         leaving?.let { dockSlide.play(it, slide, Animations.duration(prefs, DOCK_SLIDE_MS)) }
+    }
+
+    // A suggested app in an empty dock slot: the dock's own cell, labels and
+    // badges, a tap to launch. Long-press arms the drawer's drag, so it can be
+    // dragged into the dock to keep it.
+    private fun dockSuggestionView(app: com.supernova.launcher.data.LaunchableApp): View {
+        val prefs = viewModel.state.value.prefs
+        val binding = ItemIconBinding.inflate(LayoutInflater.from(this))
+        val box = dockIconBoxPx(prefs)
+        binding.icon.updateLayoutParams { width = box; height = box }
+        binding.root.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        binding.root.setPadding(
+            dp(DOCK_ITEM_PADDING_H_DP), dp(DOCK_ITEM_PADDING_V_DP),
+            dp(DOCK_ITEM_PADDING_H_DP), dp(DOCK_ITEM_PADDING_V_DP)
+        )
+        binding.icon.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        binding.icon.setImageDrawable(
+            itemIcons.withBadge(
+                viewModel.appCatalog().iconFor(app),
+                app.packageName,
+                app.className,
+                app.userSerial
+            )
+        )
+        binding.label.text = app.label
+        LabelStyler.apply(
+            binding.label, prefs, onWallpaper = true,
+            context = com.supernova.launcher.ui.LabelContext.DOCK
+        )
+        binding.label.visibility = if (prefs.dockLabels) View.VISIBLE else View.GONE
+        binding.root.contentDescription = app.label
+        binding.root.setOnClickListener { launchApp(app, it) }
+        binding.root.setOnLongClickListener { v ->
+            longPressNewApp(v, app)
+            true
+        }
+        if (Animations.enabled(prefs)) com.supernova.launcher.ui.ItemPress.attach(binding.root)
+        return binding.root
     }
 
     // Everything the dock draws from. renderDock tears the row down with
@@ -2241,6 +2297,14 @@ class LauncherActivity :
                     ""
                 }
         }
+        // What the empty slots would suggest, so a recently used app arriving
+        // in or out of them redraws the dock.
+        val suggestions = if (state.prefs.dockSuggestions && dockPage == 0) {
+            viewModel.dockSuggestions(state.prefs.dockCount)
+                .joinToString(";") { com.supernova.launcher.ui.DockSuggestions.key(it) }
+        } else {
+            ""
+        }
         return listOf(
             state.prefs,
             state.iconGeneration,
@@ -2248,7 +2312,8 @@ class LauncherActivity :
             drag.settlingItemId,
             isLandscape,
             binding.dockBar.width,
-            items
+            items,
+            suggestions
         )
     }
 

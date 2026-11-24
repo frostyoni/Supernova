@@ -1277,6 +1277,16 @@ class LauncherViewModel(
     // in.
     fun recentApps(limit: Int): List<LaunchableApp> = DrawerOrder.recentRow(visibleApps(), usage(), limit)
 
+    // Apps for the dock's empty slots: the recently used ones that are not
+    // already in the dock (any page), one each, private space never.
+    fun dockSuggestions(limit: Int): List<LaunchableApp> {
+        if (limit <= 0) return emptyList()
+        val placed = dockItems().mapNotNullTo(HashSet()) { item ->
+            item.packageName?.let { pkg -> "${item.userSerial}/$pkg/${item.className.orEmpty()}" }
+        }
+        return DockSuggestions.fill(recentApps(limit + placed.size + 4), placed, limit)
+    }
+
     fun noteLaunch(app: LaunchableApp) = persist { preferences.recordLaunch(hiddenKey(app)) }
 
     fun personalApps(): List<LaunchableApp> = visibleApps().filterNot { it.work }

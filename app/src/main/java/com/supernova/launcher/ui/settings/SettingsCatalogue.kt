@@ -669,6 +669,12 @@ object SettingsCatalogue {
                     display = { it.toString() },
                     preview = { p, v -> p.copy(dockCount = v) }
                 ).waitsOn(R.string.dock_enabled, dockOff),
+                SettingItem.Toggle(
+                    R.string.dock_suggestions,
+                    get = { it.dockSuggestions },
+                    set = { viewModel.set(Pref.dockSuggestions, it) },
+                    subtitle = R.string.dock_suggestions_summary
+                ).waitsOn(R.string.dock_enabled, dockOff),
                 SettingItem.Slider(
                     R.string.dock_pages,
                     min = 1, max = Pref.DOCK_PAGES_MAX,

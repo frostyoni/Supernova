@@ -160,6 +160,8 @@ object Pref {
     val gridRows = int("grid_rows", 2..GridLimits.DESKTOP_BIG)
     val gridCols = int("grid_cols", 2..GridLimits.DESKTOP_BIG)
     val dockCount = int("dock_count", DOCK_COUNT_MIN..GridLimits.DOCK_BIG)
+    // Fill the dock's empty slots with apps used recently.
+    val dockSuggestions = bool("dock_suggestions")
     val iconScale = float("icon_scale", ICON_SCALE_MIN..ICON_SCALE_MAX)
     val showLabels = bool("show_labels")
     val wallpaperScroll = bool("wallpaper_scroll")

@@ -100,6 +100,8 @@
     <string name="unable_to_launch">Unable to launch %1$s</string>
     <string name="grid_rows">Rows</string>
     <string name="grid_cols">Columns</string>
+    <string name="dock_suggestions">Suggestions</string>
+    <string name="dock_suggestions_summary">Fill empty dock slots with apps used recently</string>
     <string name="dock_count">Dock slots</string>
     <string name="show_labels">Show icon labels</string>
     <string name="wallpaper_scroll">Scroll wallpaper with pages</string>

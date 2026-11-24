@@ -212,6 +212,8 @@ data class LauncherPrefs(
     val desktopPaddingV: Int = 12,
     val desktopLocked: Boolean = false,
     val dockEnabled: Boolean = true,
+    // Fill empty dock slots with the apps used most recently.
+    val dockSuggestions: Boolean = false,
     // Dock rank space is page * dockCount + slot; extra pages swipe in place.
     val dockPages: Int = 1,
     val dockBgStyle: DockBgStyle = DockBgStyle.NONE,
