@@ -218,6 +218,8 @@ data class LauncherPrefs(
     val lowSpec: Boolean = false,
     // The drawer's fast scroller sits on the left.
     val leftHanded: Boolean = false,
+    // The drawer list starts lower, leaving room above it.
+    val drawerBottomShift: Boolean = false,
     // Dock rank space is page * dockCount + slot; extra pages swipe in place.
     val dockPages: Int = 1,
     val dockBgStyle: DockBgStyle = DockBgStyle.NONE,

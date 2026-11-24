@@ -213,6 +213,7 @@ class LauncherActivity :
                 override fun showDesktopPreviews() = desktopPreviews.show()
                 override fun openFeed() = feed.open()
                 override fun openPrivateSpace(anchor: View?) = privateSpaceCard.open(anchor)
+                override fun toggleReachability() = this@LauncherActivity.toggleReachability()
             }
         )
     }
@@ -665,6 +666,11 @@ class LauncherActivity :
         ThemeEngine.applyAccent(this, appliedAccent)
         binding = ActivityLauncherBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // The drawer's container has no height until it is first measured; the
+        // bottom-shift setting is applied from its own layout from then on.
+        binding.drawerListContainer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyDrawerBottomShift()
+        }
         rememberConfiguration(resources.configuration)
         setUpEdgeToEdge()
         // A theme flip recreates this activity with no pref changing.
@@ -1036,6 +1042,7 @@ class LauncherActivity :
         // restart. The touch stream is not guaranteed to end first.
         if (::pageDrag.isInitialized) pageDrag.cancel()
         if (!viewModel.state.value.prefs.dockRememberPosition) showMainDockPage(animate = false)
+        resetReachability()
         widgets.stopListening()
         runCatching { unregisterReceiver(dateChangeReceiver) }
         MainStallWatch.stop()
@@ -1926,6 +1933,7 @@ class LauncherActivity :
                     )
                     applySystemChrome(state.prefs)
                     applyHandedness(state.prefs)
+                    applyDrawerBottomShift()
                     feed.onPrefs(state.prefs)
                     // Everything above needs no icons, so it runs as soon as
                     // the persisted state decodes. Everything below binds
@@ -2499,6 +2507,85 @@ class LauncherActivity :
         }
         // applyDockChrome's guard key carries systemInsets, so this re-applies.
         applyDockChrome(viewModel.state.value.prefs)
+    }
+
+    private var reachabilityScrim: View? = null
+
+    // Reachability: the home's grid comes down into the bottom half for a
+    // moment, and the empty band over it takes a tap to put it back. The dock
+    // stays put - it is already within reach.
+    private fun toggleReachability() {
+        if (reachabilityScrim != null) {
+            exitReachability()
+            return
+        }
+        val pager = binding.workspacePager
+        if (pager.height <= 0 || drawer.isVisible || search.isOpen || feed.isOpen ||
+            (::editMode.isInitialized && editMode.isOpen)
+        ) {
+            return
+        }
+        val prefs = viewModel.state.value.prefs
+        val shift = (pager.height * REACHABILITY_FRACTION).toInt()
+        if (shift <= 0) return
+        val scrim = View(this).apply {
+            setBackgroundColor(REACHABILITY_SCRIM)
+            isClickable = true
+            contentDescription = getString(R.string.reachability_restore)
+            setOnClickListener { exitReachability() }
+            alpha = 0f
+        }
+        (binding.root as ViewGroup).addView(
+            scrim,
+            androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, shift
+            ).apply { gravity = Gravity.TOP }
+        )
+        reachabilityScrim = scrim
+        val duration = Animations.duration(prefs, REACHABILITY_MS)
+        pager.animate().cancel()
+        pager.animate().translationY(shift.toFloat()).setDuration(duration).start()
+        scrim.animate().alpha(1f).setDuration(duration).start()
+    }
+
+    private fun exitReachability() {
+        val scrim = reachabilityScrim ?: return
+        reachabilityScrim = null
+        val duration = Animations.duration(viewModel.state.value.prefs, REACHABILITY_MS)
+        binding.workspacePager.animate().cancel()
+        binding.workspacePager.animate().translationY(0f).setDuration(duration).start()
+        scrim.animate().alpha(0f).setDuration(duration).withEndAction {
+            (scrim.parent as? ViewGroup)?.removeView(scrim)
+        }.start()
+    }
+
+    // Leaving the launcher (or the drawer opening over it) puts the home
+    // straight back rather than animating behind something else.
+    private fun resetReachability() {
+        val scrim = reachabilityScrim ?: return
+        reachabilityScrim = null
+        binding.workspacePager.animate().cancel()
+        binding.workspacePager.translationY = 0f
+        (scrim.parent as? ViewGroup)?.removeView(scrim)
+    }
+
+    // Bottom-shifted drawer: the list starts lower, in the thumb's half. A top
+    // margin on the list's container does it - the container's weight takes
+    // the lost height from the list, not from the sheet.
+    private fun applyDrawerBottomShift() {
+        val list = binding.drawerListContainer
+        val params = list.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
+        val prefs = viewModel.state.value.prefs
+        val parentHeight = (list.parent as? View)?.height ?: 0
+        val margin = if (prefs.drawerBottomShift && parentHeight > 0) {
+            (parentHeight * DRAWER_SHIFT_FRACTION).toInt()
+        } else {
+            0
+        }
+        if (params.topMargin != margin) {
+            params.topMargin = margin
+            list.layoutParams = params
+        }
     }
 
     // Left-handed mode puts the drawer's fast scroller - and its letter
@@ -5582,6 +5669,12 @@ class LauncherActivity :
     }
 
     companion object {
+        // Reachability: how much of the home's height it comes down by, and
+        // how much room the bottom-shifted drawer leaves above its list.
+        private const val REACHABILITY_FRACTION = 0.34f
+        private const val REACHABILITY_MS = 260L
+        private const val REACHABILITY_SCRIM = 0x66000000
+        private const val DRAWER_SHIFT_FRACTION = 0.28f
         // A badge change settles the item it landed on.
         private const val PULSE_FROM = 0.94f
         private const val PULSE_MS = 220L

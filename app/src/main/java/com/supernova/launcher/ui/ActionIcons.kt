@@ -33,6 +33,7 @@ object ActionIcons {
         GestureAction.LAUNCH_SHORTCUT,
         GestureAction.LAUNCH_INTENT -> R.drawable.ic_action_drawer
         GestureAction.LAUNCH_FOLDER_ITEM -> R.drawable.ic_action_folder_item
+        GestureAction.REACHABILITY -> R.drawable.ic_action_reachability
         GestureAction.JUMP_TO_PAGE -> R.drawable.ic_action_home
         GestureAction.NONE -> R.drawable.ic_action_drawer
     }

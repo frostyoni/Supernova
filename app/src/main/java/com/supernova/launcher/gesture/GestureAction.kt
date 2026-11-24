@@ -42,6 +42,8 @@ enum class GestureAction {
     // Only offered on a placed folder's swipe rows, where the folder is the
     // icon the finger is on, so a home gesture has nothing to open.
     LAUNCH_FOLDER_ITEM,
+    // Pull the home down into the bottom half for a moment.
+    REACHABILITY,
     TOGGLE_STATUS_BAR,
     TOGGLE_DOCK,
     // Payload = 0-based page index.

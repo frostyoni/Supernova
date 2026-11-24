@@ -816,6 +816,13 @@ object SettingsCatalogue {
                     set = { viewModel.set(Pref.leftHanded, it) },
                     subtitle = R.string.left_handed_summary
                 ),
+                // The list starts lower, closer to a thumb.
+                SettingItem.Toggle(
+                    R.string.drawer_bottom_shift,
+                    get = { it.drawerBottomShift },
+                    set = { viewModel.set(Pref.drawerBottomShift, it) },
+                    subtitle = R.string.drawer_bottom_shift_summary
+                ),
                 rows.choice(
                     R.string.drawer_style, DrawerStyle.entries,
                     { it.drawerStyle }, { EnumLabels.of(it) }

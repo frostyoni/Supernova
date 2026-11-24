@@ -779,6 +779,10 @@
     <string name="labs">Labs</string>
     <string name="group_home_button">Home button</string>
     <string name="section_labs_subtitle">Experiments and icon theme tools</string>
+    <string name="action_reachability">Reachability</string>
+    <string name="reachability_restore">Put the home back</string>
+    <string name="drawer_bottom_shift">Start the list lower</string>
+    <string name="drawer_bottom_shift_summary">Leave room above the grid, closer to the thumb</string>
     <string name="labs_low_spec">Low-spec mode</string>
     <string name="labs_low_spec_summary">No animations, no wallpaper zoom, and the dock glass stops using the shader</string>
     <string name="left_handed">Left-handed</string>

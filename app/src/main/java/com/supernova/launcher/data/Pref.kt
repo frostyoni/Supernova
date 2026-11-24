@@ -166,6 +166,8 @@ object Pref {
     val lowSpec = bool("low_spec")
     // The drawer's fast scroller on the left, for a left thumb.
     val leftHanded = bool("left_handed")
+    // Start the drawer list lower, in the thumb's half.
+    val drawerBottomShift = bool("drawer_bottom_shift")
     val iconScale = float("icon_scale", ICON_SCALE_MIN..ICON_SCALE_MAX)
     val showLabels = bool("show_labels")
     val wallpaperScroll = bool("wallpaper_scroll")
