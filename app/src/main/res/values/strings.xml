@@ -461,7 +461,6 @@
     <string name="folder_show_name">Show folder name</string>
     <string name="folder_show_count">Show app count</string>
     <string name="folder_window_radius">Window corner radius</string>
-    <string name="placement_hidden">Hidden</string>
     <string name="drawer_bar_filled">Filled background</string>
     <string name="drawer_search_bar">Drawer search bar</string>
     <string name="drawer_scrubber_color">Fast scroller color</string>
@@ -563,7 +562,6 @@
     <string name="about_whats_new_none">No release notes in this build.</string>
     <string name="about_report_issue">Report an issue</string>
     <string name="about_report_issue_summary">Opens a new issue on GitHub</string>
-    <string name="about_report_issue_body">\n\n---\n%1$s</string>
     <string name="about_device_details">Supernova %1$s, Android %2$s (API %3$d), %4$s</string>
     <string name="about_no_browser">No app here opens links</string>
     <string name="about_source">Source code</string>
@@ -675,6 +673,8 @@
     <string name="reshape_legacy">Reshape legacy icons</string>
     <string name="reshape_legacy_auto">Rescale only</string>
     <string name="reshape_legacy_on">Rescale and add background</string>
+    <string name="normalize_icon_size">Normalize icon size</string>
+    <string name="normalize_icon_size_summary">Scale large icons down to match Material guidelines</string>
     <string name="drawer_pull_to_search">Pull to search</string>
     <string name="folder_prioritize_first">Prioritize first icon</string>
     <string name="folder_prioritize_first_summary">The first app large in the folder icon, the rest small</string>
@@ -715,6 +715,8 @@
     <string name="auto_add_apps">Add new apps to Home screen</string>
     <string name="label_font">Label font</string>
     <string name="label_single_line">Single-line labels</string>
+    <string name="label_even_rows">Even row spacing</string>
+    <string name="label_even_rows_summary">App drawer and folder rows keep room for two-line labels</string>
     <!-- The Home screen's Icon size bar and Label card. The card
          names its controls briefly because they sit under its "Label"
          header; search lists them by the longer names above. -->
@@ -912,6 +914,7 @@
     <string name="search_bar_shadow">Shadow</string>
     <string name="search_bar_hint_text">Show “Search” text</string>
     <string name="drawer_bar_hint_text">Show “Search” text</string>
+    <string name="search_window_hint_text">Show “Search” text</string>
     <string name="search_bar_chips">Buttons</string>
     <string name="search_bar_chip_voice">Voice search</string>
     <string name="search_bar_chip_assistant">Assistant</string>
