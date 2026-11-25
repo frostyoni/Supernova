@@ -1021,6 +1021,12 @@ object SettingsCatalogue {
                     get = { it.drawerFastScroller },
                     set = { viewModel.set(Pref.drawerFastScroller, it) }
                 ).hiddenWhen { dependsOn(R.string.drawer_style, it.drawerStyle == DrawerStyle.PAGED_GRID) },
+                SettingItem.Toggle(
+                    R.string.alphabet_index,
+                    subtitle = R.string.alphabet_index_sub,
+                    get = { it.drawerAlphabetIndex },
+                    set = { viewModel.set(Pref.drawerAlphabetIndex, it) }
+                ).hiddenWhen { dependsOn(R.string.drawer_style, it.drawerStyle == DrawerStyle.PAGED_GRID) },
                 rows.color(
                     R.string.drawer_scrubber_color, { it.drawerScrubberColor },
                     // As the scroller's own switch, none in the paged style.

@@ -197,6 +197,8 @@
     <string name="category_finance">Finance</string>
     <string name="drawer_icon_scale">Icon size</string>
     <string name="drawer_bg_opacity">Background opacity</string>
+    <string name="alphabet_index">Alphabet index</string>
+    <string name="alphabet_index_sub">A column of letters on the drawer\u2019s edge; tap or drag to jump. Replaces the scroll bar while on.</string>
     <string name="drawer_fast_scroller">Fast scroller</string>
     <string name="drawer_labels">Icon labels</string>
     <string name="drawer_sort">Sort order</string>

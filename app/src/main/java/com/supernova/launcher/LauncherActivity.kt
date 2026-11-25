@@ -2613,6 +2613,12 @@ class LauncherActivity :
         }
         val mirror = if (prefs.leftHanded) -1f else 1f
         if (scroller.scaleX != mirror) scroller.scaleX = mirror
+        // The alphabet index is symmetric: it only changes sides.
+        val indexParams = binding.drawerAlphabetIndex.layoutParams as? FrameLayout.LayoutParams
+        if (indexParams != null && indexParams.gravity != side) {
+            indexParams.gravity = side
+            binding.drawerAlphabetIndex.layoutParams = indexParams
+        }
         val bubble = binding.drawerFastScrollBubble
         val bubbleParams = bubble.layoutParams as? FrameLayout.LayoutParams
         if (bubbleParams != null) {
@@ -4021,12 +4027,10 @@ class LauncherActivity :
         val placed = item.takeIf { shortcut == null }
         // A pop-up widget belongs to an icon, not to the app: only a placed
         // app or shortcut offers it.
-        // A dock icon has no swipes, so it offers none; a folder member's
-        // swipe runs in the folder's own window, which the card is placed
-        // against the display to handle.
+        // Every placed app or shortcut can carry one, the dock's included:
+        // dock icons bind through the same item view, so they have swipes.
         val popupItem = item.takeIf {
-            (it.container == ContainerType.WORKSPACE || it.container == ContainerType.FOLDER) &&
-                (it.itemType == ItemType.APP || it.itemType == ItemType.SHORTCUT)
+            it.itemType == ItemType.APP || it.itemType == ItemType.SHORTCUT
         }
         val livePopup = { viewModel.state.value.model.items.firstOrNull { it.id == item.id } }
         // Null for an icon that can't have one, so the sheet leaves the rows
@@ -4426,11 +4430,9 @@ class LauncherActivity :
             // A folder's own swipes can open one of its apps by position.
             if (item.itemType == ItemType.FOLDER) add(GestureAction.LAUNCH_FOLDER_ITEM)
             // An icon's swipe can peek at a widget bound to it: an app, a
-            // shortcut, a folder, or one of a folder's apps. A dock icon has
-            // no swipes, so it is not offered.
-            if (item.container != ContainerType.DOCK &&
-                (item.itemType == ItemType.APP || item.itemType == ItemType.SHORTCUT ||
-                    item.itemType == ItemType.FOLDER)
+            // shortcut, a folder, or one of a folder's apps, on the dock too.
+            if (item.itemType == ItemType.APP || item.itemType == ItemType.SHORTCUT ||
+                item.itemType == ItemType.FOLDER
             ) {
                 add(GestureAction.SHOW_POPUP_WIDGET)
             }

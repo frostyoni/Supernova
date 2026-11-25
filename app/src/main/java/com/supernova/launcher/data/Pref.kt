@@ -242,6 +242,7 @@ object Pref {
     val drawerMatchDesktop = bool("drawer_match_desktop")
     val drawerBgOpacity = float("drawer_bg_opacity", DRAWER_OPACITY_MIN..1f)
     val drawerFastScroller = bool("drawer_fast_scroller")
+    val drawerAlphabetIndex = bool("drawer_alphabet_index")
     val drawerPullToSearch = bool("drawer_pull_to_search")
     val drawerSwipeIndicator = bool("drawer_swipe_indicator")
     val drawerSwipeHaptic = bool("drawer_swipe_haptic")

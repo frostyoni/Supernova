@@ -378,6 +378,16 @@
                 android:paddingVertical="@dimen/space_ms"
                 android:visibility="gone" />
 
+            <!-- The alphabet index, on the same edge: off unless enabled,
+                 and the scroller steps aside while it shows. -->
+            <com.supernova.launcher.ui.AlphabetIndexView
+                android:id="@+id/drawerAlphabetIndex"
+                android:layout_width="30dp"
+                android:layout_height="match_parent"
+                android:layout_gravity="end"
+                android:paddingVertical="@dimen/space_ms"
+                android:visibility="gone" />
+
             <!-- Its letter bubble, placed by the scroller, at the
                  fastscroll_popup sizes. -->
             <TextView

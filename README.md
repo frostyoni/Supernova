@@ -6,6 +6,14 @@ All the features you love from other launchers, without the things you hate.
 
 **No ads. No tracking. Free and open source, forever.**
 
+> **This is the Supernova++ fork** — a test branch on top of upstream Supernova
+> (v0.2.9) with extra work: pop-up widgets, the custom transition builder
+> (presets, undo/redo, file I/O), the liquid-glass dock with its controls,
+> widget stacks, feed cards and more. What it adds and how to try it is in
+> [SUPERNOVA-PLUS.md](SUPERNOVA-PLUS.md); test builds are in the
+> [test pre-release](https://github.com/frostyoni/Supernova/releases/tag/test-2026-11-22).
+> It tracks upstream and is not an official Supernova release.
+
 Import your settings from Lawnchair, Nova or Smart Launcher to get started quickly.
 
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"

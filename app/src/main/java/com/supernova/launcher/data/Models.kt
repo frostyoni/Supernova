@@ -319,6 +319,7 @@ data class LauncherPrefs(
     val drawerBgOpacity: Float = 1f,
     // On by default.
     val drawerFastScroller: Boolean = true,
+    val drawerAlphabetIndex: Boolean = false,
     // Overscrolling past the bottom of the drawer list opens global search.
     val drawerPullToSearch: Boolean = false,
     // Open App Drawer options, for a swipe up bound to the drawer: a

@@ -12,10 +12,12 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.core.view.doOnLayout
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.tabs.TabLayout
@@ -554,6 +556,7 @@ class DrawerController(
             list.fadeBottom = context.dp(LIST_FADE_DP) + listInset
         }
         binding.drawerFastScroller.setPadding(0, context.dp(12) + topPad, 0, context.dp(12) + listInset + bottomPad)
+        binding.drawerAlphabetIndex.setPadding(0, context.dp(12) + topPad, 0, context.dp(12) + listInset + bottomPad)
         // A 44dp field, on the line the old 52dp one was centred on.
         binding.drawerSearchRow.setPadding(
             context.dp(16),
@@ -895,6 +898,17 @@ class DrawerController(
         binding.drawerWorkTurnOn.setOnClickListener { viewModel.setWorkPaused(false) }
         binding.drawerFastScroller.attach(binding.drawerRecycler, binding.drawerFastScrollBubble)
         binding.drawerFastScroller.sections = { adapter.fastScrollSections() }
+        // The alphabet index: the same sections the scroller uses, jumped
+        // to on a press or a drag down the column.
+        binding.drawerAlphabetIndex.sectionProvider = { adapter.fastScrollSections() }
+        binding.drawerAlphabetIndex.onSection = { section ->
+            binding.drawerRecycler.scrollToPosition(section.position)
+        }
+        binding.drawerRecycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                updateAlphabetLetter()
+            }
+        })
         // The thumb drags the list as a finger would, and drops the keyboard too.
         binding.drawerFastScroller.onDragStart = { if (binding.drawerSearch.hasFocus()) hideKeyboard() }
     }
@@ -2486,6 +2500,10 @@ class DrawerController(
             track = (FAST_SCROLL_TRACK_ALPHA shl 24) or (resolvedDrawer.text and 0xFFFFFF),
             bubbleText = context.getColor(R.color.onAccent)
         )
+        binding.drawerAlphabetIndex.setColors(
+            text = (0xB3 shl 24) or (resolvedDrawer.text and 0xFFFFFF),
+            accent = LabelStyler.parseColor(prefs.drawerScrubberColor, resolvedDrawer.accent)
+        )
         (binding.drawerSheet.background?.mutate() as? GradientDrawable)?.setColor(resolvedDrawer.surface)
         // Elevation shadow under a translucent sheet reads as muddy.
         binding.drawerSheet.elevation =
@@ -2507,11 +2525,32 @@ class DrawerController(
     private fun updateFastScrollerVisibility() {
         val prefs = viewModel.state.value.prefs
         val searchEmpty = binding.drawerSearch.text.isNullOrBlank()
-        val show = prefs.drawerFastScroller && searchEmpty &&
+        val canShow = searchEmpty &&
             prefs.drawerStyle != DrawerStyle.PAGED_GRID &&
             binding.drawerWorkPaused.visibility != View.VISIBLE
+        // The index takes the edge instead of the scroll bar, not beside it:
+        // two column-width controls would overlap.
+        val alphabet = prefs.drawerAlphabetIndex && canShow &&
+            adapter.fastScrollSections().isNotEmpty()
+        binding.drawerAlphabetIndex.visibility = if (alphabet) View.VISIBLE else View.GONE
+        if (alphabet) {
+            binding.drawerAlphabetIndex.refresh()
+            updateAlphabetLetter()
+        }
+        val show = prefs.drawerFastScroller && canShow && !alphabet
         binding.drawerFastScroller.visibility = if (show) View.VISIBLE else View.GONE
         if (show) binding.drawerFastScroller.updateThumb()
+    }
+
+    // The index's current mark: the letter of the section the list's first
+    // visible row is in.
+    private fun updateAlphabetLetter() {
+        val index = binding.drawerAlphabetIndex
+        if (index.visibility != View.VISIBLE) return
+        val layout = binding.drawerRecycler.layoutManager as? LinearLayoutManager ?: return
+        val first = layout.findFirstVisibleItemPosition()
+        index.currentLetter =
+            if (first < 0) null else FastScrollMath.label(first, adapter.fastScrollSections())
     }
 
     // Width the grid actually gets: the sheet once it has been laid out,
