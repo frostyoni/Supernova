@@ -47,6 +47,9 @@ class FolderPopup(private val context: Context) {
         // folderShowName pref: hides the title row, its menu button too. The
         // folder's long-press menu still has what that menu held.
         showTitle: Boolean = true,
+        // A folder inside another: a small folder mark beside the name, so a
+        // nested card is not mistaken for a top-level one.
+        nestedFolder: Boolean = false,
         // folderShowCount pref: the number of apps beside the name.
         showCount: Boolean = false,
         // folderShadow pref: the card's own elevation, not the window's - the
@@ -104,6 +107,9 @@ class FolderPopup(private val context: Context) {
         binding.folderTitle.setHintTextColor(androidx.core.graphics.ColorUtils.setAlphaComponent(text, HINT_ALPHA))
         binding.folderCount.setTextColor(androidx.core.graphics.ColorUtils.setAlphaComponent(text, COUNT_ALPHA))
         binding.folderEditButton.imageTintList = android.content.res.ColorStateList.valueOf(text)
+        binding.folderNestedIcon.imageTintList = android.content.res.ColorStateList.valueOf(text)
+        binding.folderNestedIcon.visibility =
+            if (showTitle && nestedFolder) View.VISIBLE else View.GONE
         binding.folderAction.setTextColor(text)
         binding.folderTitle.visibility = if (showTitle) View.VISIBLE else View.GONE
         if (!titleEditable) {

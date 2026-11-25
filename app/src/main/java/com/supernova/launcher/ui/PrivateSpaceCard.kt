@@ -197,7 +197,7 @@ class PrivateSpaceCard(
             showLabels = prefs.folderLabels,
             labelPrefs = prefs,
             iconScale = if (prefs.folderMatchDesktop) prefs.iconScale else prefs.folderIconScale,
-            onClick = { item ->
+            onClick = { _, item ->
                 appsById[item.id]?.let { app ->
                     if (viewModel.state.value.prefs.folderCloseOnLaunch) card?.dismiss()
                     host.launchApp(app)

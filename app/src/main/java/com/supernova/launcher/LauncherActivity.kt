@@ -358,6 +358,9 @@ class LauncherActivity :
     private val folderPopup by lazy { FolderPopup(this) }
     // The open folder card, if any. A PopupWindow outlives a home press on its
     // own, so onNewIntent has to close it like every other overlay.
+    // The folder windows open, oldest first: a folder inside a folder opens
+    // above its parent, and closing a window closes anything opened from it.
+    private val folderWindows = mutableListOf<android.widget.PopupWindow>()
     private var activeFolderPopup: android.widget.PopupWindow? = null
     // The open folder's members, so a badge moving redraws them too.
     private var activeFolderAdapter: FolderMemberAdapter? = null
@@ -3087,6 +3090,7 @@ class LauncherActivity :
         // A folder card the same swipe closed on its first touch (#110), read
         // after the reset, whose own closes don't count twice.
         val closed = com.supernova.launcher.ui.OpenDialogs.dismissAll(this) or
+            closeFolderWindows() or
             resetToHome(animate = scroll, keepDrawer = keepDrawerOpen, keepPage = keepPage) or
             cardSwipeClose.takeFor(SystemClock.uptimeMillis()) or promptClosed
         // A press on the home screen itself also slides the dock back to its
@@ -4637,7 +4641,31 @@ class LauncherActivity :
         }
     }
 
-    private fun showFolderPopup(anchor: View, folder: LauncherItem) {
+    // A Home press, or a top-level folder opening, closes the whole stack
+    // card by card. True when there was one, so the press had a job.
+    private fun closeFolderWindows(): Boolean {
+        if (folderWindows.isEmpty()) return false
+        val windows = folderWindows.toList()
+        folderWindows.clear()
+        windows.forEach { it.dismiss() }
+        return true
+    }
+
+    // A window going away takes the ones opened from it; a child's close
+    // leaves its parent alone.
+    private fun forgetFolderWindow(window: android.widget.PopupWindow?) {
+        window ?: return
+        val index = folderWindows.indexOf(window)
+        if (index < 0) return
+        val above = folderWindows.subList(index + 1, folderWindows.size).toList()
+        folderWindows.subList(index, folderWindows.size).clear()
+        above.forEach { it.dismiss() }
+    }
+
+    private fun showFolderPopup(anchor: View, folder: LauncherItem, nested: Boolean = false) {
+        // One folder from the home at a time; a folder inside a folder opens
+        // above its parent, which stays where it is.
+        if (!nested) closeFolderWindows()
         var folderAdapter: FolderMemberAdapter? = null
         var popup: android.widget.PopupWindow? = null
         // Moving an app inside the card, before it is taken out past the
@@ -4665,9 +4693,15 @@ class LauncherActivity :
             showLabels = folderPrefs.folderLabels,
             labelPrefs = folderPrefs,
             iconScale = if (folderPrefs.folderMatchDesktop) folderPrefs.iconScale else folderPrefs.folderIconScale,
-            onClick = {
-                if (viewModel.state.value.prefs.folderCloseOnLaunch) popup?.dismiss()
-                launchItem(it)
+            onClick = { memberView, member ->
+                if (member.itemType == ItemType.FOLDER) {
+                    // A folder inside a folder opens above it; the folder
+                    // you were in stays behind the new one.
+                    showFolderPopup(memberView, member, nested = true)
+                } else {
+                    if (viewModel.state.value.prefs.folderCloseOnLaunch) popup?.dismiss()
+                    launchItem(member, memberView)
+                }
             },
             // An app in a home folder is a home icon like any other: its
             // menu while the finger is held, and a drag once it moves - to
@@ -4691,6 +4725,9 @@ class LauncherActivity :
         }
         adapter.shortcutIcon = { member ->
             member.takeIf { it.itemType == ItemType.SHORTCUT }?.let(itemIcons::intentItemIcon)
+        }
+        adapter.folderIcon = { member ->
+            if (member.itemType == ItemType.FOLDER) itemIcon(member) {} else null
         }
         // An app's swipes work in the open folder too, as on the home screen.
         adapter.attachSwipe = { tile, member ->
@@ -4718,6 +4755,7 @@ class LauncherActivity :
                 .of(com.supernova.launcher.ui.theme.SurfaceId.FOLDER).cornerRadiiDp,
             showTitle = prefs.folderShowName,
             showCount = prefs.folderShowCount,
+            nestedFolder = folder.folderId != null,
             shadow = prefs.folderShadow,
             animate = Animations.enabled(prefs),
             speed = Animations.factor(prefs),
@@ -4745,13 +4783,18 @@ class LauncherActivity :
                     // Undo bar shows in the folder's own window.
                     sortFolderWithUndo(folder.id, popup?.contentView, ::applied)
                 }
-                addMoveToDrawerRow(menu, folder) { popup?.dismiss() }
+                // A folder already inside another has no home of its own to
+                // move to the drawer; its member menu's Move to home does.
+                if (folder.container != ContainerType.FOLDER) {
+                    addMoveToDrawerRow(menu, folder) { popup?.dismiss() }
+                }
                 drag.activeItemPopup = menu
                 menu.show(button)
                 menu.makeModal()
                 memberMenu = menu
             },
             onDismiss = {
+                forgetFolderWindow(popup)
                 // A shortcut being dragged out of a member's menu closes the
                 // card too, and that close is the drag's as well.
                 val menuCarried = memberMenu?.let { drag.ownsGestureIn(it.window) } == true
@@ -4768,9 +4811,15 @@ class LauncherActivity :
                 drag.onWindowDismissed(popup)
                 activeFolderPopup = null
                 activeFolderAdapter = null
-                animateWallpaperZoom(0f)
+                // The wallpaper stays zoomed while a parent folder is still
+                // open behind the one that closed.
+                animateWallpaperZoom(if (folderWindows.isEmpty()) 0f else 1f)
             }
         )
+        popup?.let {
+            folderWindows.remove(it)
+            folderWindows.add(it)
+        }
         // Every touch on the card goes through the item gesture first: an
         // app held there, the drag it becomes, and the press that closes its
         // menu once modal, swallowed so it doesn't also launch the app it
@@ -4888,7 +4937,7 @@ class LauncherActivity :
             showLabels = prefs.folderLabels,
             labelPrefs = prefs,
             iconScale = if (prefs.folderMatchDesktop) prefs.iconScale else prefs.folderIconScale,
-            onClick = { item ->
+            onClick = { _, item ->
                 // A folder inside opens in this card's place; Back then
                 // closes it, not back to this one.
                 val child = held[item.id]

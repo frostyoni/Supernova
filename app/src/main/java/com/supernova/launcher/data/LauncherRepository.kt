@@ -342,7 +342,8 @@ class LauncherRepository(private val context: Context) {
             // land beside the target instead - the caller already ruled the
             // hover outside the folder centre zone.
             val next = when {
-                mergeFolders && target != null && target.itemType == ItemType.FOLDER && isFolderEligible(moving) ->
+                mergeFolders && target != null && target.itemType == ItemType.FOLDER &&
+                    (isFolderEligible(moving) || FolderNesting.canNest(current, moving, target)) ->
                     moveIntoFolderModel(current, moving, target.id)
                 mergeFolders && target != null && isFolderEligible(moving) && isFolderEligible(target) ->
                     createNewFolderModel(current, moving, target)
@@ -386,8 +387,18 @@ class LauncherRepository(private val context: Context) {
     suspend fun moveItemIntoFolder(itemId: String, folderId: String) {
         mutate { current ->
             val moving = current.items.firstOrNull { it.id == itemId } ?: return@mutate current
-            if (!isFolderEligible(moving)) return@mutate current
-            moveIntoFolderModel(current, moving, folderId)
+            val target = current.items.firstOrNull { it.id == folderId } ?: return@mutate current
+            if (!isFolderEligible(moving) && !FolderNesting.canNest(current, moving, target)) {
+                return@mutate current
+            }
+            val nested = moveIntoFolderModel(current, moving, folderId)
+            // Out of a folder and into another: the one it left may now be
+            // too small to stay a folder.
+            if (moving.container == ContainerType.FOLDER) {
+                withSparseFolderDissolved(nested, moving.folderId)
+            } else {
+                nested
+            }
         }
     }
 
@@ -1328,7 +1339,8 @@ class LauncherRepository(private val context: Context) {
             val target = mergeTarget(current, item.page, item.cellX, item.cellY, null, mergeTargetId)
 
             when {
-                mergeFolders && target != null && target.itemType == ItemType.FOLDER && isFolderEligible(item) ->
+                mergeFolders && target != null && target.itemType == ItemType.FOLDER &&
+                    (isFolderEligible(item) || FolderNesting.canNest(current, item, target)) ->
                     moveIntoFolderModel(
                         current.copy(items = current.items + item),
                         item,
@@ -1789,11 +1801,13 @@ class LauncherRepository(private val context: Context) {
                 spanX = folder.spanX,
                 spanY = folder.spanY,
                 rank = folder.rank,
-                folderId = null
+                // In the place of the folder it replaces: a nested folder's
+                // last member joins its parent rather than the home screen.
+                folderId = folder.folderId
             )
             // In the folder's place in the list too, which is its place in
             // the page's stacking.
-            return current.copy(
+            val next = current.copy(
                 items = current.items.mapNotNull {
                     when (it.id) {
                         folder.id -> last
@@ -1802,6 +1816,12 @@ class LauncherRepository(private val context: Context) {
                     }
                 }
             )
+            // A nested folder that goes away leaves its parent a member short.
+            return if (folder.container == ContainerType.FOLDER) {
+                withSparseFolderDissolved(next, folder.folderId)
+            } else {
+                next
+            }
         }
 
         private const val AUTO_BACKUP_KEEP = 5

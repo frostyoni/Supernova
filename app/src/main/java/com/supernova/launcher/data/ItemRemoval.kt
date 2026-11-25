@@ -8,9 +8,12 @@ object ItemRemoval {
     // that brings the folder back through replaced().
     fun removed(current: LauncherModel, itemId: String): LauncherModel {
         val removedItem = current.items.firstOrNull { it.id == itemId }
-        val removeIds = mutableSetOf(itemId)
-        if (removedItem?.itemType == ItemType.FOLDER) {
-            current.items.filter { it.folderId == itemId }.forEach { removeIds.add(it.id) }
+        // A folder goes with everything inside it, however deep: a nested
+        // folder's own members belong to it, not to the parent.
+        val removeIds = if (removedItem?.itemType == ItemType.FOLDER) {
+            subtreeIds(current, itemId)
+        } else {
+            setOf(itemId)
         }
         val next = current.copy(items = current.items.filterNot { it.id in removeIds })
         return if (removedItem?.container == ContainerType.FOLDER) {
@@ -18,6 +21,21 @@ object ItemRemoval {
         } else {
             next
         }
+    }
+
+    private fun subtreeIds(model: LauncherModel, folderId: String): Set<String> {
+        val ids = mutableSetOf(folderId)
+        var grew = true
+        while (grew) {
+            grew = false
+            model.items.forEach { item ->
+                if (item.folderId != null && item.folderId in ids && item.id !in ids) {
+                    ids.add(item.id)
+                    grew = true
+                }
+            }
+        }
+        return ids
     }
 
     // The captured items replace whatever now has their ids, then go back

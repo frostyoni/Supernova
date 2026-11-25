@@ -158,6 +158,10 @@ class ItemIcons(private val context: Context, private val viewModel: LauncherVie
     // One member's place in a folder preview: rendered now without `late`,
     // else from the cache or an empty place while it renders.
     private fun previewMemberIcon(member: LauncherItem, onLate: (() -> Unit)?, late: LateIcons?): Drawable? {
+        // A folder inside a folder shows as a little folder of its own.
+        if (member.itemType == ItemType.FOLDER) {
+            return folderPreviewDrawable(member, onLate) ?: emptySlot()
+        }
         val shortcut = member.itemType == ItemType.SHORTCUT
         val look = when {
             !shortcut -> null

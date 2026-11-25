@@ -36,6 +36,18 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!-- A folder inside another folder: a small mark beside its
+                 name. Hidden for a top-level folder. -->
+            <ImageView
+                android:id="@+id/folderNestedIcon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="@dimen/space_sm"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_folder"
+                android:visibility="gone"
+                app:tint="@color/textPrimary" />
+
             <EditText
                 android:id="@+id/folderTitle"
                 android:layout_width="0dp"

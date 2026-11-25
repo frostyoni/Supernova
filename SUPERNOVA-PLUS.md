@@ -23,6 +23,16 @@ edges known · **dropped** = considered and deliberately not done.
   The action is only offered on folder icons; home gestures and standalone action
   icons cannot select it.
 
+- **Nested folders** — *experimental*. A folder inside a folder, on the home
+  screen or the dock: dragging a folder onto another nests it (a folder cannot
+  be dropped into itself or into a folder it contains). The child opens as its
+  own card above the parent, with a small folder mark beside its name; the
+  parent stays behind it, a tap outside or Back closes the front card, and Home
+  closes the stack. A nested folder's last member takes its place in the parent
+  (the two-app rule, all the way up); removing a folder takes its whole subtree
+  with it; a folder's preview recurses, so a folder containing a folder shows a
+  little folder in its icon.
+
 ## Search
 
 - **Not a second drawer** — *stable*. The empty search window shows recent

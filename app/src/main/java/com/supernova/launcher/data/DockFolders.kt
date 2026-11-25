@@ -6,13 +6,22 @@ internal object DockFolders {
 
     private fun foldable(item: LauncherItem) = item.itemType == ItemType.APP || item.itemType == ItemType.SHORTCUT
 
-    // The dock item the drop goes into a folder with, or null when it can't:
-    // a folder goes into no folder, and an app already in that folder stays.
-    fun target(current: LauncherModel, moving: LauncherItem, rank: Int): LauncherItem? =
-        current.items.firstOrNull { it.container == ContainerType.DOCK && it.rank == rank && it.id != moving.id }
-            ?.takeIf {
-                foldable(moving) && (it.itemType == ItemType.FOLDER || foldable(it)) && moving.folderId != it.id
-            }
+    // The dock item the drop goes into a folder with, or null when it can't.
+    // An app joins a folder or makes one with another app; a folder joins an
+    // existing folder (never a new one with an app, and never itself).
+    fun target(current: LauncherModel, moving: LauncherItem, rank: Int): LauncherItem? {
+        val other = current.items.firstOrNull {
+            it.container == ContainerType.DOCK && it.rank == rank && it.id != moving.id
+        } ?: return null
+        return if (moving.folderId == other.id) {
+            null
+        } else when {
+            foldable(moving) && (other.itemType == ItemType.FOLDER || foldable(other)) -> other
+            moving.itemType == ItemType.FOLDER && other.itemType == ItemType.FOLDER &&
+                FolderNesting.canNest(current, moving, other) -> other
+            else -> null
+        }
+    }
 
     // folderId names the folder it makes, if it makes one. An item new to
     // the layout (from the drawer) comes in with its own id.
