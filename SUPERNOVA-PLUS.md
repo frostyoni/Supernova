@@ -98,8 +98,9 @@ edges known · **dropped** = considered and deliberately not done.
   outside the widget, so a widget that treats long-press or sliding as its own
   never loses it. Tap outside the card or press Back to put it away. An app, a
   shortcut, a folder, or an app inside a folder; a dock icon has no swipes, so
-  it has none. The card is placed against the display rather than one window,
-  so it also opens over a folder.
+  it has none. The card is placed against the display in the activity's own
+  window, so a folder member's card opens at its icon even in a dock folder,
+  where the folder's window sits near the bottom of the screen.
 
 - **Dock suggestions** — *stable*. Off by default (Dock → Suggestions): the main
   page's empty slots fill with apps used recently, excluding the dock's own

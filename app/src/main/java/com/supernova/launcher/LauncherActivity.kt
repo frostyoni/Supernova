@@ -5521,31 +5521,27 @@ class LauncherActivity :
         val gap = px(3)
         val padding = px(8)
         val root = binding.root
-        // A folder icon lives in the folder's own window: the card is placed
-        // in that window's coordinates against the display's room.
         val windowW = resources.displayMetrics.widthPixels
         val windowH = resources.displayMetrics.heightPixels
         if (windowW == 0 || windowH == 0) return
         val insets = androidx.core.view.ViewCompat.getRootWindowInsets(root)
             ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             ?: androidx.core.graphics.Insets.NONE
+        // Screen coordinates, and the card is shown in the activity's window:
+        // a folder member's icon lives in the folder's small window, which in
+        // the dock sits near the bottom of the screen. Placing the card in
+        // that window's coordinates put it near the top instead.
         val location = IntArray(2)
-        val onScreen = IntArray(2)
         if (anchor != null) {
-            anchor.getLocationInWindow(location)
-            anchor.getLocationOnScreen(onScreen)
+            anchor.getLocationOnScreen(location)
         } else {
-            location[0] = root.width / 2
-            location[1] = root.height / 2
-            onScreen[0] = location[0]
-            onScreen[1] = location[1]
+            location[0] = windowW / 2
+            location[1] = windowH / 2
         }
-        val originX = onScreen[0] - location[0]
-        val originY = onScreen[1] - location[1]
-        val left = insets.left + margin - originX
-        val top = insets.top + margin - originY
-        val right = windowW - insets.right - margin - originX
-        val bottom = windowH - insets.bottom - margin - originY
+        val left = insets.left + margin
+        val top = insets.top + margin
+        val right = windowW - insets.right - margin
+        val bottom = windowH - insets.bottom - margin
         val (minW, minH) = widgets.popupWidgetMinSize(item)
         // A pop-up is a peek, not a grid cell: it may be dragged smaller than
         // the cells the provider asks for, down to a readable floor.
@@ -5696,7 +5692,9 @@ class LauncherActivity :
             content.scaleX = 0.94f
             content.scaleY = 0.94f
         }
-        popup.showAtLocation(anchor ?: root, android.view.Gravity.NO_GRAVITY, x, y)
+        // The activity's window, not the folder's: a folder window is small
+        // and would clip a card that leans past it.
+        popup.showAtLocation(root, android.view.Gravity.NO_GRAVITY, x, y)
         if (animate) {
             content.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140L).start()
         }
