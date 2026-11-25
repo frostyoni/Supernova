@@ -5494,11 +5494,22 @@ class LauncherActivity :
         v.onTouchEvent(cancel)
         cancel.recycle()
         v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        // A folder closes before the action runs, which detaches this icon:
+        // its screen position has to be taken while it is still attached, or
+        // a pop-up anchored at it opens at the top-left instead.
+        val location = IntArray(2)
+        v.getLocationOnScreen(location)
         inFolder?.invoke()
         when {
             up && opensOnSwipe -> showFolderPopup(v, item)
-            up -> launchSwipeAction(item, item.swipeAction, item.swipeLabel, v, nudgeUp = true)
-            else -> launchSwipeAction(item, item.swipeActionDown, item.swipeLabelDown, v, nudgeUp = false)
+            up -> launchSwipeAction(
+                item, item.swipeAction, item.swipeLabel, v,
+                nudgeUp = true, anchorLocation = location
+            )
+            else -> launchSwipeAction(
+                item, item.swipeActionDown, item.swipeLabelDown, v,
+                nudgeUp = false, anchorLocation = location
+            )
         }
     }
 
@@ -5506,7 +5517,11 @@ class LauncherActivity :
     // it, or beside it when neither has room. It is the widget's own host
     // view, so its taps and scrolling work; Back or a touch outside puts it
     // away, as does leaving the launcher (a widget tap opens an app).
-    private fun showPopupWidget(item: LauncherItem, anchor: View?) {
+    private fun showPopupWidget(
+        item: LauncherItem,
+        anchor: View?,
+        anchorLocation: IntArray? = null
+    ) {
         val hostView = widgets.popupHostView(item)
         if (hostView == null) {
             Toast.makeText(this, R.string.popup_widget_unavailable, Toast.LENGTH_SHORT).show()
@@ -5532,7 +5547,10 @@ class LauncherActivity :
         // the dock sits near the bottom of the screen. Placing the card in
         // that window's coordinates put it near the top instead.
         val location = IntArray(2)
-        if (anchor != null) {
+        if (anchorLocation != null) {
+            location[0] = anchorLocation[0]
+            location[1] = anchorLocation[1]
+        } else if (anchor != null) {
             anchor.getLocationOnScreen(location)
         } else {
             location[0] = windowW / 2
@@ -5827,7 +5845,8 @@ class LauncherActivity :
         action: String?,
         label: String?,
         anchor: View? = null,
-        nudgeUp: Boolean = true
+        nudgeUp: Boolean = true,
+        anchorLocation: IntArray? = null
     ) {
         action ?: return
         // A launcher-action uri runs through the shared action dispatcher;
@@ -5838,7 +5857,7 @@ class LauncherActivity :
                 if (live.popupWidget == null) {
                     widgets.showPickerForPopup(live, !nudgeUp)
                 } else {
-                    showPopupWidget(live, anchor)
+                    showPopupWidget(live, anchor, anchorLocation)
                 }
                 return
             }
