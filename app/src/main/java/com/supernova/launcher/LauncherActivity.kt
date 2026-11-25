@@ -5488,7 +5488,8 @@ class LauncherActivity :
         val density = resources.displayMetrics.density
         fun px(dp: Int) = (dp * density).toInt()
         val margin = px(10)
-        val gap = px(8)
+        // The tab's tip sits this far above the icon: close, not touching.
+        val gap = px(3)
         val padding = px(8)
         val root = binding.root
         // A folder icon lives in the folder's own window: the card is placed
@@ -6065,8 +6066,8 @@ class LauncherActivity :
         private const val POPUP_WIDGET_MIN_H_DP = 120
         // The tab that points at the icon and opens the pop-up's controls,
         // and how much of it overlaps the card.
-        private const val POPUP_WIDGET_TAB_HEIGHT_DP = 16
-        private const val POPUP_WIDGET_TAB_OVERLAP_DP = 4
+        private const val POPUP_WIDGET_TAB_HEIGHT_DP = 12
+        private const val POPUP_WIDGET_TAB_OVERLAP_DP = 5
 
         // Reachability: how much of the home's height it comes down by, and
         // how much room the bottom-shifted drawer leaves above its list.
