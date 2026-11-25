@@ -812,6 +812,46 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    // An icon's pop-up widget, once a picker has bound it: null removes it.
+    // The caller frees the host id it replaces.
+    suspend fun setPopupWidget(
+        itemId: String,
+        appWidgetId: Int?,
+        provider: String = "",
+        userSerial: Long = 0L
+    ) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId) {
+                        item.copy(
+                            popupWidget = appWidgetId?.let {
+                                WidgetStackMember(it, provider, userSerial)
+                            }
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    // A restore's fresh id for an icon's pop-up widget, as for a stack member.
+    suspend fun setPopupWidgetId(itemId: String, appWidgetId: Int) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId) {
+                        item.copy(popupWidget = item.popupWidget?.copy(appWidgetId = appWidgetId))
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
     // Appends a newly-bound widget to a workspace widget stack, up to the
     // two-widget limit. False when the stack was already full; the caller
     // must free the unused id.

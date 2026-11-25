@@ -28,6 +28,8 @@ import com.supernova.launcher.data.ItemType
 import com.supernova.launcher.data.LauncherItem
 import com.supernova.launcher.data.LauncherModel
 import com.supernova.launcher.feed.FeaturedType
+import com.supernova.launcher.gesture.ActionShortcut
+import com.supernova.launcher.gesture.GestureAction
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.LauncherRepository
 import com.supernova.launcher.data.WorkspaceGeometry
@@ -62,6 +64,10 @@ class WidgetController(
         // An open feed pane covers the resize frame; a press there is the pane's.
         val feedOpen: Boolean
         fun currentCellSizePx(): Pair<Int, Int>
+
+        // A pop-up widget was just bound to an icon: the activity shows the
+        // one-time explainer, if it is due.
+        fun popupWidgetBound()
 
         // The home gesture detector saw a down that a widget has now claimed.
         fun cancelGesture(cancel: MotionEvent)
@@ -109,12 +115,14 @@ class WidgetController(
     // and so do its cached view and size. One left behind by a recreate or a
     // process death in between is reclaimed by sweepOrphanIds.
     fun releaseWidget(item: LauncherItem) {
-        val ids = listOfNotNull(item.appWidgetId) + item.widgetStack.mapNotNull { it.appWidgetId }
+        val ids = listOfNotNull(item.appWidgetId, item.popupWidget?.appWidgetId) +
+            item.widgetStack.mapNotNull { it.appWidgetId }
         if (ids.isEmpty()) return
         ids.forEach { id ->
             appWidgetHost.deleteAppWidgetId(id)
             lastReportedSizes.remove(id)
             widgetHostViews.remove(id)
+            popupHostViews.remove(id)
         }
         stackContainers.remove(item.id)
     }
@@ -123,6 +131,7 @@ class WidgetController(
         appWidgetHost.deleteAppWidgetId(widgetId)
         lastReportedSizes.remove(widgetId)
         widgetHostViews.remove(widgetId)
+        popupHostViews.remove(widgetId)
     }
 
     // One host view per card widget, reused on every bind. The feed rebinds
@@ -174,6 +183,9 @@ class WidgetController(
         data object SearchBar : Target
         // Add as a second member of an existing workspace widget stack.
         data class Stack(val itemId: String) : Target
+        // An icon's pop-up widget. A direction binds that swipe to it, for
+        // the picker row that opened this.
+        data class Popup(val itemId: String, val down: Boolean? = null) : Target
     }
 
     // Kept in the view model: a dark-mode, font-size or language change
@@ -196,6 +208,9 @@ class WidgetController(
     private val widgetHostViews = mutableMapOf<Int, AppWidgetHostView>()
     // Stack containers, reused across page rebinds so members stop flashing.
     private val stackContainers = mutableMapOf<String, WidgetStackView>()
+    // Pop-up widgets by host id: a second swipe shows the same view rather
+    // than a blank one while the provider redelivers.
+    private val popupHostViews = mutableMapOf<Int, AppWidgetHostView>()
 
     // Touch stream currently owned by a widget's own scrolling content, plus
     // the widget the finger went down on while it is still undecided.
@@ -664,6 +679,50 @@ class WidgetController(
         )
     }
 
+    // The icon's pop-up widget, hosted once and reused across shows: a fresh
+    // host view each time would blank and reload it, as it would a stack's.
+    fun popupHostView(item: LauncherItem): AppWidgetHostView? {
+        val widgetId = item.popupWidget?.appWidgetId ?: return null
+        val info = appWidgetManager.getAppWidgetInfo(widgetId)
+        if (info == null) {
+            popupHostViews.remove(widgetId)
+            return null
+        }
+        return popupHostViews.getOrPut(widgetId) {
+            createWidgetHostView(widgetId, info) ?: return null
+        }.also(::applyWidgetCornerRadius)
+    }
+
+    // The pop-up's row in Edit: the widget's own name, "Widget" when the
+    // provider is momentarily out of reach, null when the icon has none.
+    fun popupWidgetLabel(item: LauncherItem): String? {
+        val member = item.popupWidget ?: return null
+        val widget = activity.getString(R.string.widget)
+        val id = member.appWidgetId ?: return widget
+        val info = appWidgetManager.getAppWidgetInfo(id) ?: return widget
+        return info.loadLabel(activity.packageManager)?.toString()?.ifBlank { widget }
+    }
+
+    // The provider's own minimum size, in dp: what the pop-up opens at.
+    fun popupWidgetMinSize(item: LauncherItem): Pair<Int, Int> {
+        val id = item.popupWidget?.appWidgetId ?: return 0 to 0
+        val info = appWidgetManager.getAppWidgetInfo(id) ?: return 0 to 0
+        return info.minWidth to info.minHeight
+    }
+
+    // Picking an icon's pop-up widget. With a swipe direction, the picker row
+    // that asked binds that swipe to the pop-up too, after the bind.
+    fun showPickerForPopup(item: LauncherItem, down: Boolean? = null) {
+        val prefs = viewModel.state.value.prefs
+        val (cellWidth, cellHeight) = host.currentCellSizePx()
+        WidgetPickerSheet.show(
+            activity, cellWidth, cellHeight, prefs.gridCols, prefs.gridRows,
+            prefs = prefs,
+            onPicked = { info -> bind(info, Target.Popup(item.id, down)) },
+            icons = WidgetPickerIcons.of(viewModel.appCatalog())
+        )
+    }
+
     // The one AppWidgetHostView factory: workspace items and feed cards both
     // host through it so the activity.applicationContext inflation constraint and the
     // corner clip apply everywhere.
@@ -802,6 +861,15 @@ class WidgetController(
                             viewModel.setWidgetStackMemberId(item.id, index, it)
                         }
                     }
+                }
+            }
+        // A pop-up widget's id is as install-specific as a stack member's.
+        model.items
+            .filter { it.itemType != ItemType.WIDGET && it.popupWidget?.appWidgetId == null }
+            .forEach { item ->
+                val member = item.popupWidget ?: return@forEach
+                rebindSilently("popup:${item.id}", member.provider, member.userSerial) {
+                    viewModel.setPopupWidgetId(item.id, it)
                 }
             }
         model.feedCards
@@ -1086,6 +1154,32 @@ class WidgetController(
                     info.provider?.flattenToString().orEmpty(),
                     serialOf(info.profile)
                 )
+            }
+            is Target.Popup -> {
+                val popupItem = viewModel.state.value.model.items.firstOrNull { it.id == target.itemId }
+                if (popupItem == null) {
+                    WidgetAddTrail.fail("icon gone before pop-up widget placed", launcherState())
+                    abortPendingWidget()
+                    Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
+                    return
+                }
+                val previous = popupItem.popupWidget?.appWidgetId
+                viewModel.setPopupWidget(
+                    target.itemId,
+                    pending.widgetId,
+                    info.provider?.flattenToString().orEmpty(),
+                    serialOf(info.profile)
+                )
+                if (previous != null && previous != pending.widgetId) releaseWidgetId(previous)
+                if (target.down != null) {
+                    viewModel.setSwipeAction(
+                        target.itemId,
+                        ActionShortcut.encode(GestureAction.SHOW_POPUP_WIDGET),
+                        activity.getString(R.string.action_popup_widget),
+                        target.down
+                    )
+                }
+                host.popupWidgetBound()
             }
         }
         reboundIds += pending.widgetId

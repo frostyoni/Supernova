@@ -84,6 +84,16 @@ edges known · **dropped** = considered and deliberately not done.
   front marked). A member that scrolls sideways itself keeps the touch stream.
   Stored as the primary widget plus `widgetStack` members; restore, orphan sweep,
   page signature and backups all know about them.
+- **Pop-up widget** — *stable*. A home icon can carry a widget it peeks at on a
+  swipe: a card opens at the icon — above it, below when there is no room above,
+  beside it in landscape — holding the widget itself, so its taps and scrolling
+  work. Bind it in **Edit → Popup widget**, or pick **Popup widget** in the
+  icon's swipe picker with nothing bound, which asks for the widget and then
+  binds that swipe. One host view per widget, so a second peek does not reload
+  it; rebound from backups and released with the icon. Tap outside the card or
+  press Back to put it away. Home icons only: dock icons have no swipes, and a
+  folder's window has no room for a card.
+
 - **Dock suggestions** — *stable*. Off by default (Dock → Suggestions): the main
   page's empty slots fill with apps used recently, excluding the dock's own
   items, hidden apps and private space. A suggestion is an ordinary dock cell;

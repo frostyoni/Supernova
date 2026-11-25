@@ -1092,6 +1092,14 @@
     <string name="feed_calendar_permission">Allow calendar access to see upcoming events</string>
     <string name="feed_contacts_title">Starred contacts</string>
     <string name="feed_contacts_permission">Allow contacts access to see starred contacts</string>
+    <string name="popup_widget_title">Popup widget</string>
+    <string name="popup_widget_none">None</string>
+    <string name="popup_widget_remove">Remove popup widget</string>
+    <string name="popup_widget_removed">Popup widget removed</string>
+    <string name="popup_widget_unavailable">That widget is no longer available \u2014 pick another</string>
+    <string name="popup_widget_hint_title">Popup widget</string>
+    <string name="popup_widget_hint">Swipe the icon to peek at its widget. Tap outside the widget, or press Back, to put it away.</string>
+    <string name="action_popup_widget">Popup widget</string>
     <string name="feed_notifications_title">Notifications</string>
     <string name="feed_show_notifications">The newest ones this device can badge, read-only</string>
     <string name="feed_notifications_empty">Nothing waiting right now</string>

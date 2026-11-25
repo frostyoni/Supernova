@@ -146,6 +146,9 @@ class LauncherActivity :
     com.supernova.launcher.ui.VoiceSearch.Host {
 
     private lateinit var binding: ActivityLauncherBinding
+    // The icon's pop-up widget while it is up; Back or a touch outside
+    // dismisses it.
+    private var popupWidgetWindow: android.widget.PopupWindow? = null
     private val viewModel: LauncherViewModel by viewModels { LauncherViewModel.Factory(appGraph) }
 
     override lateinit var workspaceAdapter: WorkspacePagerAdapter
@@ -1043,6 +1046,7 @@ class LauncherActivity :
         if (::pageDrag.isInitialized) pageDrag.cancel()
         if (!viewModel.state.value.prefs.dockRememberPosition) showMainDockPage(animate = false)
         resetReachability()
+        popupWidgetWindow?.dismiss()
         widgets.stopListening()
         runCatching { unregisterReceiver(dateChangeReceiver) }
         MainStallWatch.stop()
@@ -4002,8 +4006,42 @@ class LauncherActivity :
         if (app == null && shortcut == null) return
         // An app icon's Edit is this copy's own, not the drawer's.
         val placed = item.takeIf { shortcut == null }
+        // A pop-up widget belongs to an icon, not to the app: only a placed
+        // app or shortcut offers it.
+        // Only a home icon: a dock icon has no swipes, and a folder member's
+        // run in the folder's own window, where a pop-up anchored at the icon
+        // could not fit. Their rows stay out.
+        val popupItem = item.takeIf {
+            it.container == ContainerType.WORKSPACE &&
+                (it.itemType == ItemType.APP || it.itemType == ItemType.SHORTCUT)
+        }
+        val livePopup = { viewModel.state.value.model.items.firstOrNull { it.id == item.id } }
+        // Null for an icon that can't have one, so the sheet leaves the rows
+        // out rather than offering a widget no swipe could show.
+        val popupLabel: (() -> String?)? = popupItem?.let {
+            { livePopup()?.let(widgets::popupWidgetLabel) }
+        }
+        val onEditPopup: (() -> Unit)? = popupItem?.let { placed ->
+            {
+                (livePopup() ?: placed).let(widgets::showPickerForPopup)
+                Unit
+            }
+        }
+        val onRemovePopup: (() -> Unit)? = popupItem?.let { placed ->
+            {
+                (livePopup() ?: placed).let { live ->
+                    live.popupWidget?.appWidgetId?.let(widgets::releaseWidgetId)
+                    viewModel.clearPopupWidget(live.id)
+                    Toast.makeText(this, R.string.popup_widget_removed, Toast.LENGTH_SHORT).show()
+                }
+                Unit
+            }
+        }
         if (!allowSwipe) {
-            AppEditSheet.show(this, lifecycleScope, viewModel, app, ::pickPhoto, shortcut = shortcut, placed = placed)
+            AppEditSheet.show(
+                this, lifecycleScope, viewModel, app, ::pickPhoto, shortcut = shortcut, placed = placed,
+                popupLabel = popupLabel, onEditPopup = onEditPopup, onRemovePopup = onRemovePopup
+            )
             return
         }
         AppEditSheet.show(
@@ -4014,7 +4052,8 @@ class LauncherActivity :
                 val live = viewModel.state.value.model.items.firstOrNull { it.id == item.id }
                 if (down) live?.swipeLabelDown else live?.swipeLabel
             },
-            onEditSwipe = { down, onPicked -> showSwipeActionPicker(item, down) { onPicked(it) } }
+            onEditSwipe = { down, onPicked -> showSwipeActionPicker(item, down) { onPicked(it) } },
+            popupLabel = popupLabel, onEditPopup = onEditPopup, onRemovePopup = onRemovePopup
         )
     }
 
@@ -4049,6 +4088,7 @@ class LauncherActivity :
         onUndo: ((com.supernova.launcher.data.LauncherModel) -> Unit)?
     ) {
         val widget = item.itemType == ItemType.WIDGET
+        val popupWidget = item.popupWidget?.appWidgetId
         if (widget) widgets.onWidgetItemRemoved(item)
         // Capture before removal: the exact item plus folder members, so undo
         // restores the same ids into the same cells (or the nearest free).
@@ -4067,7 +4107,7 @@ class LauncherActivity :
             }
         viewModel.removeItem(item.id)
         if (!viewModel.state.value.prefs.undoRemove) {
-            if (widget) widgets.releaseWidget(item)
+            if (widget || popupWidget != null) widgets.releaseWidget(item)
             removeEmptyPages(emptied = item.desktopPage())
             return
         }
@@ -4090,7 +4130,9 @@ class LauncherActivity :
             override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
                 // Before the check below: a bar replaced by the next removal's
                 // is final too.
-                if (widget && event != DISMISS_EVENT_ACTION) widgets.releaseWidget(item)
+                if ((widget || popupWidget != null) && event != DISMISS_EVENT_ACTION) {
+                    widgets.releaseWidget(item)
+                }
                 if (undoSnackbar !== transientBottomBar) return
                 undoSnackbar = null
                 if (event != DISMISS_EVENT_ACTION) removeEmptyPages(emptied = item.desktopPage())
@@ -4205,6 +4247,7 @@ class LauncherActivity :
             removed.widgets.forEach(widgets::onWidgetItemRemoved)
             if (!viewModel.state.value.prefs.undoRemove) {
                 removed.widgets.forEach(widgets::releaseWidget)
+                releasedPopups(removed).forEach(widgets::releaseWidget)
                 return@removePageWithItems
             }
             val snackbar = Snackbar.make(binding.root, R.string.page_removed, UNDO_DURATION_MS)
@@ -4222,7 +4265,10 @@ class LauncherActivity :
             }
             snackbar.addCallback(object : Snackbar.Callback() {
                 override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
-                    if (event != DISMISS_EVENT_ACTION) removed.widgets.forEach(widgets::releaseWidget)
+                    if (event != DISMISS_EVENT_ACTION) {
+                        removed.widgets.forEach(widgets::releaseWidget)
+                        releasedPopups(removed).forEach(widgets::releaseWidget)
+                    }
                     if (undoSnackbar === transientBottomBar) undoSnackbar = null
                 }
             })
@@ -4230,6 +4276,11 @@ class LauncherActivity :
             snackbar.show()
         }
     }
+
+    // A removed page's icons with pop-up widgets: their host ids go with the
+    // rest once Undo has had its chance. Widget items are released above.
+    private fun releasedPopups(removed: com.supernova.launcher.data.RemovedPage): List<LauncherItem> =
+        removed.items.filter { it.itemType != ItemType.WIDGET && it.popupWidget != null }
 
     // Says what stayed on the home screen, and offers the move back.
     private fun showFolderMovedBar(move: com.supernova.launcher.data.FolderMove) {
@@ -4361,6 +4412,14 @@ class LauncherActivity :
             add(GestureAction.JUMP_TO_PAGE)
             // A folder's own swipes can open one of its apps by position.
             if (item.itemType == ItemType.FOLDER) add(GestureAction.LAUNCH_FOLDER_ITEM)
+            // A home icon's swipe can peek at a widget bound to it; a dock
+            // icon has no swipes, and a folder member's sit in the folder's
+            // own window, with no place to show one.
+            if (item.container == ContainerType.WORKSPACE &&
+                (item.itemType == ItemType.APP || item.itemType == ItemType.SHORTCUT)
+            ) {
+                add(GestureAction.SHOW_POPUP_WIDGET)
+            }
         }
         com.supernova.launcher.ui.ActionPickerSheet.show(
             this,
@@ -4375,7 +4434,13 @@ class LauncherActivity :
             when (pick) {
                 com.supernova.launcher.ui.ActionPick.None -> save(null, null)
                 is com.supernova.launcher.ui.ActionPick.Action ->
-                    save(com.supernova.launcher.gesture.ActionShortcut.encode(pick.action), pick.label)
+                    if (pick.action == GestureAction.SHOW_POPUP_WIDGET && item.popupWidget == null) {
+                        // Nothing to peek at yet: pick the widget first, and
+                        // the bind sets this swipe to open it.
+                        widgets.showPickerForPopup(item, down)
+                    } else {
+                        save(com.supernova.launcher.gesture.ActionShortcut.encode(pick.action), pick.label)
+                    }
                 is com.supernova.launcher.ui.ActionPick.FolderItem ->
                     save(
                         com.supernova.launcher.gesture.ActionShortcut.encode(
@@ -5394,6 +5459,118 @@ class LauncherActivity :
         }
     }
 
+    // The icon's pop-up widget: a card where one fits - above the icon, below
+    // it, or beside it when neither has room. It is the widget's own host
+    // view, so its taps and scrolling work; Back or a touch outside puts it
+    // away, as does leaving the launcher (a widget tap opens an app).
+    private fun showPopupWidget(item: LauncherItem, anchor: View?) {
+        // Its coordinates and insets are this window's; a folder's icon has
+        // a window of its own and the card would not fit in it.
+        if (anchor != null && anchor.rootView !== binding.root) return
+        val hostView = widgets.popupHostView(item)
+        if (hostView == null) {
+            Toast.makeText(this, R.string.popup_widget_unavailable, Toast.LENGTH_SHORT).show()
+            widgets.showPickerForPopup(item)
+            return
+        }
+        popupWidgetWindow?.dismiss()
+        val density = resources.displayMetrics.density
+        fun px(dp: Int) = (dp * density).toInt()
+        val margin = px(10)
+        val gap = px(10)
+        val padding = px(8)
+        val root = binding.root
+        val windowW = root.width
+        val windowH = root.height
+        if (windowW == 0 || windowH == 0) return
+        val insets = androidx.core.view.ViewCompat.getRootWindowInsets(root)
+            ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            ?: androidx.core.graphics.Insets.NONE
+        val left = insets.left + margin
+        val top = insets.top + margin
+        val right = windowW - insets.right - margin
+        val bottom = windowH - insets.bottom - margin
+        val (minW, minH) = widgets.popupWidgetMinSize(item)
+        val cardW = (px(minW.coerceAtLeast(160)) + padding * 2).coerceAtMost(right - left)
+        val cardH = (px(minH.coerceAtLeast(120)) + padding * 2).coerceAtMost(bottom - top)
+        val card = android.widget.FrameLayout(this).apply {
+            background = androidx.core.content.ContextCompat
+                .getDrawable(this@LauncherActivity, R.drawable.bg_popup_widget)?.mutate()
+            clipToOutline = true
+        }
+        val surface = com.supernova.launcher.ui.theme.Styles
+            .resolve(this, viewModel.state.value.prefs)
+            .of(com.supernova.launcher.ui.theme.SurfaceId.POPUP)
+        (card.background as? android.graphics.drawable.GradientDrawable)?.apply {
+            setColor(surface.surface)
+            // The style's own corners, when it shapes the POPUP surface.
+            surface.cornerRadiiDp?.let { radii ->
+                cornerRadii = floatArrayOf(
+                    radii[0] * density, radii[0] * density,
+                    radii[1] * density, radii[1] * density,
+                    radii[2] * density, radii[2] * density,
+                    radii[3] * density, radii[3] * density
+                )
+            }
+        }
+        (hostView.parent as? android.view.ViewGroup)?.removeView(hostView)
+        card.addView(
+            hostView,
+            android.widget.FrameLayout.LayoutParams(-1, -1).apply {
+                setMargins(padding, padding, padding, padding)
+            }
+        )
+        val popup = android.widget.PopupWindow(card, cardW, cardH, true).apply {
+            isOutsideTouchable = true
+            setBackgroundDrawable(
+                android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+            )
+            elevation = 16 * density
+            isClippingEnabled = true
+            setOnDismissListener { if (popupWidgetWindow === this) popupWidgetWindow = null }
+        }
+        val location = IntArray(2)
+        anchor?.getLocationInWindow(location)
+        val anchorX = location[0]
+        val anchorY = location[1]
+        val anchorW = anchor?.width ?: 0
+        val anchorH = anchor?.height ?: 0
+        val centerX = anchorX + anchorW / 2
+        val centerY = anchorY + anchorH / 2
+        val x: Int
+        val y: Int
+        val above = anchorY - gap - cardH
+        val below = anchorY + anchorH + gap
+        if (above >= top) {
+            y = above
+            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
+        } else if (below + cardH <= bottom) {
+            y = below
+            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
+        } else if (anchorX + anchorW + gap + cardW <= right) {
+            x = anchorX + anchorW + gap
+            y = (centerY - cardH / 2).coerceIn(top, maxOf(top, bottom - cardH))
+        } else if (anchorX - gap - cardW >= left) {
+            x = anchorX - gap - cardW
+            y = (centerY - cardH / 2).coerceIn(top, maxOf(top, bottom - cardH))
+        } else {
+            // Nowhere beside it fits either: centre it, as a dialog would.
+            x = ((windowW - cardW) / 2).coerceIn(left, maxOf(left, right - cardW))
+            y = ((windowH - cardH) / 2).coerceIn(top, maxOf(top, bottom - cardH))
+        }
+        val animate = !viewModel.state.value.prefs.lowSpec
+        if (animate) {
+            card.alpha = 0f
+            card.scaleX = 0.94f
+            card.scaleY = 0.94f
+        }
+        popup.showAtLocation(anchor ?: root, android.view.Gravity.NO_GRAVITY, x, y)
+        if (animate) {
+            card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140L).start()
+        }
+        popupWidgetWindow = popup
+    }
+
     // A swipe-to-open folder's tap: the first app its window shows, launched
     // from the folder's icon. A folder with nothing to launch opens instead.
     private fun launchFolderFirstItem(folder: LauncherItem, anchor: View) {
@@ -5428,6 +5605,15 @@ class LauncherActivity :
         // A launcher-action uri runs through the shared action dispatcher;
         // a folder's position actions are resolved against the icon itself.
         com.supernova.launcher.gesture.ActionShortcut.decode(action)?.let { binding ->
+            if (binding.action == GestureAction.SHOW_POPUP_WIDGET) {
+                val live = viewModel.state.value.model.items.firstOrNull { it.id == item.id } ?: item
+                if (live.popupWidget == null) {
+                    widgets.showPickerForPopup(live, !nudgeUp)
+                } else {
+                    showPopupWidget(live, anchor)
+                }
+                return
+            }
             if (binding.action == GestureAction.LAUNCH_FOLDER_ITEM) {
                 if (item.itemType == ItemType.FOLDER) {
                     launchFolderItem(
@@ -5656,6 +5842,17 @@ class LauncherActivity :
     }
 
     override fun reportWidgetSize(item: LauncherItem, view: View) = widgets.reportWidgetSize(item, view)
+
+    // The one-time explainer, after the first pop-up widget is bound.
+    override fun popupWidgetBound() {
+        if (viewModel.state.value.prefs.seenPopupWidgetHint) return
+        viewModel.set(com.supernova.launcher.data.Pref.seenPopupWidgetHint, true)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.popup_widget_hint_title)
+            .setMessage(R.string.popup_widget_hint)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
 
     override fun currentCellSizePx(): Pair<Int, Int> {
         val prefs = viewModel.state.value.prefs

@@ -365,18 +365,33 @@ class BackupRoundTripTest {
         val model = LauncherModel(
             items = listOf(
                 LauncherItem(id = "live", itemType = ItemType.WIDGET, appWidgetId = 7, widgetProvider = "a/.B"),
-                LauncherItem(id = "stale", itemType = ItemType.WIDGET, appWidgetId = 8, widgetProvider = "a/.C")
+                LauncherItem(id = "stale", itemType = ItemType.WIDGET, appWidgetId = 8, widgetProvider = "a/.C"),
+                // Icons' pop-up widgets are as install-specific as a widget's.
+                LauncherItem(
+                    id = "app-live", itemType = ItemType.APP, packageName = "a",
+                    popupWidget = WidgetStackMember(11, "a/.E")
+                ),
+                LauncherItem(
+                    id = "app-stale", itemType = ItemType.APP, packageName = "a",
+                    popupWidget = WidgetStackMember(12, "a/.F")
+                )
             ),
             feedCards = listOf(
                 com.supernova.launcher.feed.FeedCard(id = "card", appWidgetId = 9, widgetProvider = "a/.D")
             )
         )
-        val cleared = RestoredWidgets.withStaleCleared(model) { id, provider -> id == 7 && provider == "a/.B" }
+        val cleared = RestoredWidgets.withStaleCleared(model) { id, provider ->
+            (id == 7 && provider == "a/.B") || (id == 11 && provider == "a/.E")
+        }
         assertEquals(7, cleared.items[0].appWidgetId)
         assertEquals(null, cleared.items[1].appWidgetId)
         assertEquals("a/.C", cleared.items[1].widgetProvider)
+        // The live pop-up keeps its id; the stale one waits for a rebind.
+        assertEquals(11, cleared.items[2].popupWidget?.appWidgetId)
+        assertEquals(null, cleared.items[3].popupWidget?.appWidgetId)
+        assertEquals("a/.F", cleared.items[3].popupWidget?.provider)
         assertEquals(null, cleared.feedCards[0].appWidgetId)
         assertEquals("a/.D", cleared.feedCards[0].widgetProvider)
-        assertEquals(2, RestoredWidgets.needingRebind(cleared))
+        assertEquals(3, RestoredWidgets.needingRebind(cleared))
     }
 }

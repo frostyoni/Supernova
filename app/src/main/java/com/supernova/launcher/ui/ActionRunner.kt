@@ -100,6 +100,9 @@ class ActionRunner(
                 host.openSearch(null)
                 true
             }
+            // The icon swipe shows the bound widget in place, anchored at
+            // the icon; a plain action has no icon to anchor it at.
+            GestureAction.SHOW_POPUP_WIDGET -> false
             GestureAction.SEARCH_QUERY -> {
                 val query = bound.payload
                 if (query.isNullOrBlank()) false else { host.openSearch(query); true }

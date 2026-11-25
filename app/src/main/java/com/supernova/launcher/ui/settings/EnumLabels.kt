@@ -74,6 +74,7 @@ object EnumLabels {
         GestureAction.LAUNCH_SHORTCUT -> R.string.action_launch_shortcut
         GestureAction.LAUNCH_FOLDER_ITEM -> R.string.action_folder_item
         GestureAction.REACHABILITY -> R.string.action_reachability
+        GestureAction.SHOW_POPUP_WIDGET -> R.string.action_popup_widget
         GestureAction.TOGGLE_STATUS_BAR -> R.string.action_toggle_status_bar
         GestureAction.TOGGLE_DOCK -> R.string.action_toggle_dock
         GestureAction.JUMP_TO_PAGE -> R.string.action_jump_to_page

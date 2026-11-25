@@ -368,6 +368,7 @@ object Pref {
     val feedShowContacts = bool("feed_show_contacts")
     val feedShowUsage = bool("feed_show_usage")
     val feedShowNotifications = bool("feed_show_notifications")
+    val seenPopupWidgetHint = bool("seen_popup_widget_hint")
     val feedShortcutRows = int("feed_shortcut_rows", 1..FEED_SHORTCUT_ROWS_MAX)
     val labsEnabled = bool("labs_enabled")
     val labsShowComponent = bool("labs_show_component")

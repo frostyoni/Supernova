@@ -13,7 +13,7 @@ internal object RestoredWidgets {
                 (if (item.appWidgetId == null) 1 else 0) +
                     item.widgetStack.count { it.appWidgetId == null }
             } else {
-                0
+                if (item.popupWidget != null && item.popupWidget.appWidgetId == null) 1 else 0
             }
         } + model.feedCards.count { it.widgetProvider != null && it.appWidgetId == null }
 
@@ -22,7 +22,15 @@ internal object RestoredWidgets {
         widgetBound: (appWidgetId: Int, provider: String?) -> Boolean
     ): LauncherModel = model.copy(
         items = model.items.map { item ->
-            if (item.itemType != ItemType.WIDGET) return@map item
+            if (item.itemType != ItemType.WIDGET) {
+                val member = item.popupWidget ?: return@map item
+                val id = member.appWidgetId
+                return@map if (id != null && !widgetBound(id, member.provider)) {
+                    item.copy(popupWidget = member.copy(appWidgetId = null))
+                } else {
+                    item
+                }
+            }
             val primary = item.appWidgetId
             val clearedPrimary = primary != null && !widgetBound(primary, item.widgetProvider)
             val clearedStack = item.widgetStack.map { member ->

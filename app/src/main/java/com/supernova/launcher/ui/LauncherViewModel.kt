@@ -919,12 +919,21 @@ class LauncherViewModel(
         val model = repository.modelFlow.first()
         val searchBarWidget = preferences.snapshot().searchBarWidgetId
         return (model.items.flatMap { item ->
-            listOfNotNull(item.appWidgetId) + item.widgetStack.mapNotNull { it.appWidgetId }
+            listOfNotNull(item.appWidgetId, item.popupWidget?.appWidgetId) +
+                item.widgetStack.mapNotNull { it.appWidgetId }
         } + model.feedCards.mapNotNull { it.appWidgetId } +
             listOfNotNull(searchBarWidget.takeIf { it != 0 })).toSet()
     }
 
     fun setWidgetId(itemId: String, appWidgetId: Int) = persist { repository.setWidgetId(itemId, appWidgetId) }
+
+    fun setPopupWidget(itemId: String, appWidgetId: Int, provider: String, userSerial: Long = 0L) =
+        persist { repository.setPopupWidget(itemId, appWidgetId, provider, userSerial) }
+
+    fun clearPopupWidget(itemId: String) = persist { repository.setPopupWidget(itemId, null) }
+
+    fun setPopupWidgetId(itemId: String, appWidgetId: Int) =
+        persist { repository.setPopupWidgetId(itemId, appWidgetId) }
 
     fun addWidgetToStack(
         itemId: String,

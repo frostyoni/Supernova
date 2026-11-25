@@ -89,6 +89,10 @@ data class LauncherItem(
     // widgetStack[index - 1]. Defaults keep pre-stack JSON intact.
     val widgetStack: List<WidgetStackMember> = emptyList(),
     val widgetStackFront: Int = 0,
+    // Any item: a widget peeked at by swiping the icon, in a pop-up anchored
+    // at it. The same member shape as a stack's, so restore, backup and
+    // release treat it alike; null when the icon has none.
+    val popupWidget: WidgetStackMember? = null,
     // Widgets only: cellX/cellY/spanX/spanY count half cells, for a widget
     // placed or sized with subgrid positioning on. WorkspaceGeometry.itemRect
     // reads it; nothing else should use those four fields raw.
@@ -582,6 +586,8 @@ data class LauncherPrefs(
     // The most-opened apps, from the launcher's own launch counts.
     val feedShowUsage: Boolean = false,
     val feedShowNotifications: Boolean = false,
+    // The one-time pop-up widget explainer has been shown.
+    val seenPopupWidgetHint: Boolean = false,
     // How many rows of suggested-shortcut pills the feed shows
     // ("Suggested shortcuts rows"), 1..3.
     val feedShortcutRows: Int = 1,

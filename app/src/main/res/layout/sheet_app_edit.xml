@@ -388,6 +388,32 @@
                     style="@style/SheetRowValue" />
             </LinearLayout>
 
+            <!-- The icon's pop-up widget: bound from here, shown by an icon
+                 swipe. Only a placed app or shortcut has one. -->
+            <LinearLayout
+                android:id="@+id/popupWidgetRow"
+                style="@style/SheetRow"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/SheetRowTitle"
+                    android:text="@string/popup_widget_title" />
+
+                <TextView
+                    android:id="@+id/popupWidgetValue"
+                    style="@style/SheetRowValue" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/popupWidgetRemove"
+                style="@style/SheetRow"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/SheetRowTitle"
+                    android:text="@string/popup_widget_remove" />
+            </LinearLayout>
+
             <!-- The drawer tabs and folders the app is in; only for an app
                  edited from the drawer, with groups to pick from. -->
             <LinearLayout

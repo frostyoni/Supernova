@@ -44,6 +44,9 @@ enum class GestureAction {
     LAUNCH_FOLDER_ITEM,
     // Pull the home down into the bottom half for a moment.
     REACHABILITY,
+    // Peek at the widget bound to the swiped icon, in a pop-up at it. Only
+    // offered on an icon's swipe rows; the widget is chosen with it.
+    SHOW_POPUP_WIDGET,
     TOGGLE_STATUS_BAR,
     TOGGLE_DOCK,
     // Payload = 0-based page index.
