@@ -90,14 +90,16 @@ edges known · **dropped** = considered and deliberately not done.
   work. Bind it in **Edit → Popup widget**, or pick **Popup widget** in the
   icon's swipe picker with nothing bound, which asks for the widget and then
   binds that swipe. One host view per widget, so a second peek does not reload
-  it; rebound from backups and released with the icon. Long-press the card for
-  its own controls: **Resize** (a corner grip; the card may shrink below the
+  it; rebound from backups and released with the icon. A little tab at the
+  card's edge points at the icon and carries the card's controls - tap or
+  long-press it: **Resize** (a corner grip; the card may shrink below the
   provider's grid minimum to a readable floor, and the size is remembered per
-  icon), **Reset size**, **Change widget**, **Remove popup widget**. Tap
-  outside the card or press Back to put it away. An app, a shortcut, a folder,
-  or an app inside a folder; a dock icon has no swipes, so it has none. The
-  card is placed against the display rather than one window, so it also opens
-  over a folder.
+  icon), **Reset size**, **Change widget**, **Remove popup widget**. The tab is
+  outside the widget, so a widget that treats long-press or sliding as its own
+  never loses it. Tap outside the card or press Back to put it away. An app, a
+  shortcut, a folder, or an app inside a folder; a dock icon has no swipes, so
+  it has none. The card is placed against the display rather than one window,
+  so it also opens over a folder.
 
 - **Dock suggestions** — *stable*. Off by default (Dock → Suggestions): the main
   page's empty slots fill with apps used recently, excluding the dock's own

@@ -161,6 +161,7 @@ class LauncherActivity :
     private var popupWidgetMaxW = 0
     private var popupWidgetMinH = 0
     private var popupWidgetMaxH = 0
+    private var popupWidgetTabDrop = 0
     private val viewModel: LauncherViewModel by viewModels { LauncherViewModel.Factory(appGraph) }
 
     override lateinit var workspaceAdapter: WorkspacePagerAdapter
@@ -5487,20 +5488,17 @@ class LauncherActivity :
         val density = resources.displayMetrics.density
         fun px(dp: Int) = (dp * density).toInt()
         val margin = px(10)
-        val gap = px(10)
+        val gap = px(8)
         val padding = px(8)
         val root = binding.root
-        // Screen coordinates: a folder icon lives in the folder's own window,
-        // so the card has to be placed against the display, not one window.
+        // A folder icon lives in the folder's own window: the card is placed
+        // in that window's coordinates against the display's room.
         val windowW = resources.displayMetrics.widthPixels
         val windowH = resources.displayMetrics.heightPixels
         if (windowW == 0 || windowH == 0) return
         val insets = androidx.core.view.ViewCompat.getRootWindowInsets(root)
             ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             ?: androidx.core.graphics.Insets.NONE
-        // A pop-up is placed in the coordinates of the window it is anchored
-        // in - the activity's, or a folder's own - while the room it has is
-        // the display's. The anchor's two positions give that window's origin.
         val location = IntArray(2)
         val onScreen = IntArray(2)
         if (anchor != null) {
@@ -5519,27 +5517,61 @@ class LauncherActivity :
         val right = windowW - insets.right - margin - originX
         val bottom = windowH - insets.bottom - margin - originY
         val (minW, minH) = widgets.popupWidgetMinSize(item)
-        // The provider minimum opens it, but a pop-up is a peek, not a grid
-        // cell: it may be dragged smaller than the cells the provider asks
-        // for, down to a readable floor.
+        // A pop-up is a peek, not a grid cell: it may be dragged smaller than
+        // the cells the provider asks for, down to a readable floor.
         val peekMinW = px(POPUP_WIDGET_MIN_W_DP) + padding * 2
         val peekMinH = px(POPUP_WIDGET_MIN_H_DP) + padding * 2
+        val tabHeight = px(POPUP_WIDGET_TAB_HEIGHT_DP)
+        val tabDrop = tabHeight - px(POPUP_WIDGET_TAB_OVERLAP_DP)
         val maxCardW = right - left
-        val maxCardH = bottom - top
+        val maxCardH = bottom - top - tabDrop
         val cardW = (item.popupWidthDp?.let(::px)
             ?: (px(minW.coerceAtLeast(160)) + padding * 2))
             .coerceIn(peekMinW.coerceAtMost(maxCardW), maxCardW)
         val cardH = (item.popupHeightDp?.let(::px)
             ?: (px(minH.coerceAtLeast(120)) + padding * 2))
             .coerceIn(peekMinH.coerceAtMost(maxCardH), maxCardH)
+        val windowCardH = cardH + tabDrop
+        val anchorX = location[0]
+        val anchorY = location[1]
+        val anchorW = anchor?.width ?: 0
+        val anchorH = anchor?.height ?: 0
+        val centerX = anchorX + anchorW / 2
+        val centerY = anchorY + anchorH / 2
+        // The tab points at the icon: below the card when the card is above
+        // it, above the card when the card is below.
+        var tabUp = false
+        val x: Int
+        val y: Int
+        val above = anchorY - gap - windowCardH
+        val below = anchorY + anchorH + gap
+        if (above >= top) {
+            y = above
+            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
+        } else if (below + windowCardH <= bottom) {
+            y = below
+            tabUp = true
+            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
+        } else if (anchorX + anchorW + gap + cardW <= right) {
+            x = anchorX + anchorW + gap
+            y = (centerY - windowCardH / 2).coerceIn(top, maxOf(top, bottom - windowCardH))
+        } else if (anchorX - gap - cardW >= left) {
+            x = anchorX - gap - cardW
+            y = (centerY - windowCardH / 2).coerceIn(top, maxOf(top, bottom - windowCardH))
+        } else {
+            // Nowhere beside it fits either: centre it, as a dialog would.
+            x = ((windowW - cardW) / 2).coerceIn(left, maxOf(left, right - cardW))
+            y = ((windowH - windowCardH) / 2).coerceIn(top, maxOf(top, bottom - windowCardH))
+        }
+        val surface = com.supernova.launcher.ui.theme.Styles
+            .resolve(this, viewModel.state.value.prefs)
+            .of(com.supernova.launcher.ui.theme.SurfaceId.POPUP)
+        val muted = (0x99000000.toInt()) or (surface.text and 0x00FFFFFF)
         val card = android.widget.FrameLayout(this).apply {
             background = androidx.core.content.ContextCompat
                 .getDrawable(this@LauncherActivity, R.drawable.bg_popup_widget)?.mutate()
             clipToOutline = true
         }
-        val surface = com.supernova.launcher.ui.theme.Styles
-            .resolve(this, viewModel.state.value.prefs)
-            .of(com.supernova.launcher.ui.theme.SurfaceId.POPUP)
         (card.background as? android.graphics.drawable.GradientDrawable)?.apply {
             setColor(surface.surface)
             // The style's own corners, when it shapes the POPUP surface.
@@ -5559,19 +5591,44 @@ class LauncherActivity :
                 setMargins(padding, padding, padding, padding)
             }
         )
-        // The launcher draws the standard widget frame on the workspace, not
-        // over a pop-up: its controls live behind a long-press here.
-        hostView.setOnLongClickListener {
-            showPopupWidgetControls(item)
-            true
+        // The tab, outside the widget, points at the icon and opens the
+        // pop-up's controls: a widget that treats long-press or sliding as
+        // its own never has to give one up.
+        val tab = android.widget.TextView(this).apply {
+            text = "\u25BE"
+            textSize = 11f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(muted)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 6 * density
+                setColor(surface.surface)
+            }
+            contentDescription = getString(R.string.popup_widget_title)
+            isClickable = true
+            isLongClickable = true
+            setOnClickListener { showPopupWidgetControls(item) }
+            setOnLongClickListener {
+                showPopupWidgetControls(item)
+                true
+            }
+            if (tabUp) rotation = 180f
         }
-        card.setOnLongClickListener {
-            showPopupWidgetControls(item)
-            true
-        }
-        popupWidgetCard = card
-        popupWidgetHost = hostView
-        val popup = android.widget.PopupWindow(card, cardW, cardH, true).apply {
+        val content = android.widget.FrameLayout(this)
+        content.addView(
+            card,
+            android.widget.FrameLayout.LayoutParams(-1, -1).apply {
+                if (tabUp) topMargin = tabDrop else bottomMargin = tabDrop
+            }
+        )
+        content.addView(
+            tab,
+            android.widget.FrameLayout.LayoutParams(
+                px(44), tabHeight,
+                (if (tabUp) android.view.Gravity.TOP else android.view.Gravity.BOTTOM) or
+                    android.view.Gravity.CENTER_HORIZONTAL
+            )
+        )
+        val popup = android.widget.PopupWindow(content, cardW, windowCardH, true).apply {
             isOutsideTouchable = true
             setBackgroundDrawable(
                 android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
@@ -5586,50 +5643,26 @@ class LauncherActivity :
                 }
             }
         }
-        val anchorX = location[0]
-        val anchorY = location[1]
-        val anchorW = anchor?.width ?: 0
-        val anchorH = anchor?.height ?: 0
-        val centerX = anchorX + anchorW / 2
-        val centerY = anchorY + anchorH / 2
-        val x: Int
-        val y: Int
-        val above = anchorY - gap - cardH
-        val below = anchorY + anchorH + gap
-        if (above >= top) {
-            y = above
-            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
-        } else if (below + cardH <= bottom) {
-            y = below
-            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
-        } else if (anchorX + anchorW + gap + cardW <= right) {
-            x = anchorX + anchorW + gap
-            y = (centerY - cardH / 2).coerceIn(top, maxOf(top, bottom - cardH))
-        } else if (anchorX - gap - cardW >= left) {
-            x = anchorX - gap - cardW
-            y = (centerY - cardH / 2).coerceIn(top, maxOf(top, bottom - cardH))
-        } else {
-            // Nowhere beside it fits either: centre it, as a dialog would.
-            x = ((windowW - cardW) / 2).coerceIn(left, maxOf(left, right - cardW))
-            y = ((windowH - cardH) / 2).coerceIn(top, maxOf(top, bottom - cardH))
-        }
-        val animate = !viewModel.state.value.prefs.lowSpec
-        if (animate) {
-            card.alpha = 0f
-            card.scaleX = 0.94f
-            card.scaleY = 0.94f
-        }
+        popupWidgetCard = card
+        popupWidgetHost = hostView
         popupWidgetX = x
         popupWidgetY = y
         popupWidgetW = cardW
         popupWidgetH = cardH
+        popupWidgetTabDrop = tabDrop
         popupWidgetMinW = peekMinW.coerceAtMost(maxCardW)
         popupWidgetMaxW = right - x
         popupWidgetMinH = peekMinH.coerceAtMost(maxCardH)
-        popupWidgetMaxH = bottom - y
+        popupWidgetMaxH = bottom - y - tabDrop
+        val animate = !viewModel.state.value.prefs.lowSpec
+        if (animate) {
+            content.alpha = 0f
+            content.scaleX = 0.94f
+            content.scaleY = 0.94f
+        }
         popup.showAtLocation(anchor ?: root, android.view.Gravity.NO_GRAVITY, x, y)
         if (animate) {
-            card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140L).start()
+            content.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140L).start()
         }
         popupWidgetWindow = popup
     }
@@ -5714,7 +5747,7 @@ class LauncherActivity :
                     if (w != popupWidgetW || h != popupWidgetH) {
                         popupWidgetW = w
                         popupWidgetH = h
-                        popup.update(popupWidgetX, popupWidgetY, w, h)
+                        popup.update(popupWidgetX, popupWidgetY, w, h + popupWidgetTabDrop)
                     }
                     true
                 }
@@ -6030,6 +6063,10 @@ class LauncherActivity :
         // provider's cell minimum, which is usually most of a phone screen.
         private const val POPUP_WIDGET_MIN_W_DP = 160
         private const val POPUP_WIDGET_MIN_H_DP = 120
+        // The tab that points at the icon and opens the pop-up's controls,
+        // and how much of it overlaps the card.
+        private const val POPUP_WIDGET_TAB_HEIGHT_DP = 16
+        private const val POPUP_WIDGET_TAB_OVERLAP_DP = 4
 
         // Reachability: how much of the home's height it comes down by, and
         // how much room the bottom-shifted drawer leaves above its list.
