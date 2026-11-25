@@ -935,6 +935,9 @@ class LauncherViewModel(
     fun setPopupWidgetId(itemId: String, appWidgetId: Int) =
         persist { repository.setPopupWidgetId(itemId, appWidgetId) }
 
+    fun setPopupWidgetSize(itemId: String, widthDp: Int?, heightDp: Int?) =
+        persist { repository.setPopupWidgetSize(itemId, widthDp, heightDp) }
+
     fun addWidgetToStack(
         itemId: String,
         appWidgetId: Int,

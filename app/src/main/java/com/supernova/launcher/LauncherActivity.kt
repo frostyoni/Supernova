@@ -149,6 +149,18 @@ class LauncherActivity :
     // The icon's pop-up widget while it is up; Back or a touch outside
     // dismisses it.
     private var popupWidgetWindow: android.widget.PopupWindow? = null
+    // The card and hosted widget it holds, and where the window sits: the
+    // resize grip works in these.
+    private var popupWidgetCard: android.widget.FrameLayout? = null
+    private var popupWidgetHost: android.appwidget.AppWidgetHostView? = null
+    private var popupWidgetX = 0
+    private var popupWidgetY = 0
+    private var popupWidgetW = 0
+    private var popupWidgetH = 0
+    private var popupWidgetMinW = 0
+    private var popupWidgetMaxW = 0
+    private var popupWidgetMinH = 0
+    private var popupWidgetMaxH = 0
     private val viewModel: LauncherViewModel by viewModels { LauncherViewModel.Factory(appGraph) }
 
     override lateinit var workspaceAdapter: WorkspacePagerAdapter
@@ -4032,7 +4044,7 @@ class LauncherActivity :
                 (livePopup() ?: placed).let { live ->
                     live.popupWidget?.appWidgetId?.let(widgets::releaseWidgetId)
                     viewModel.clearPopupWidget(live.id)
-                    Toast.makeText(this, R.string.popup_widget_removed, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@LauncherActivity, R.string.popup_widget_removed, Toast.LENGTH_SHORT).show()
                 }
                 Unit
             }
@@ -5507,8 +5519,19 @@ class LauncherActivity :
         val right = windowW - insets.right - margin - originX
         val bottom = windowH - insets.bottom - margin - originY
         val (minW, minH) = widgets.popupWidgetMinSize(item)
-        val cardW = (px(minW.coerceAtLeast(160)) + padding * 2).coerceAtMost(right - left)
-        val cardH = (px(minH.coerceAtLeast(120)) + padding * 2).coerceAtMost(bottom - top)
+        // The provider minimum opens it, but a pop-up is a peek, not a grid
+        // cell: it may be dragged smaller than the cells the provider asks
+        // for, down to a readable floor.
+        val peekMinW = px(POPUP_WIDGET_MIN_W_DP) + padding * 2
+        val peekMinH = px(POPUP_WIDGET_MIN_H_DP) + padding * 2
+        val maxCardW = right - left
+        val maxCardH = bottom - top
+        val cardW = (item.popupWidthDp?.let(::px)
+            ?: (px(minW.coerceAtLeast(160)) + padding * 2))
+            .coerceIn(peekMinW.coerceAtMost(maxCardW), maxCardW)
+        val cardH = (item.popupHeightDp?.let(::px)
+            ?: (px(minH.coerceAtLeast(120)) + padding * 2))
+            .coerceIn(peekMinH.coerceAtMost(maxCardH), maxCardH)
         val card = android.widget.FrameLayout(this).apply {
             background = androidx.core.content.ContextCompat
                 .getDrawable(this@LauncherActivity, R.drawable.bg_popup_widget)?.mutate()
@@ -5536,6 +5559,18 @@ class LauncherActivity :
                 setMargins(padding, padding, padding, padding)
             }
         )
+        // The launcher draws the standard widget frame on the workspace, not
+        // over a pop-up: its controls live behind a long-press here.
+        hostView.setOnLongClickListener {
+            showPopupWidgetControls(item)
+            true
+        }
+        card.setOnLongClickListener {
+            showPopupWidgetControls(item)
+            true
+        }
+        popupWidgetCard = card
+        popupWidgetHost = hostView
         val popup = android.widget.PopupWindow(card, cardW, cardH, true).apply {
             isOutsideTouchable = true
             setBackgroundDrawable(
@@ -5543,7 +5578,13 @@ class LauncherActivity :
             )
             elevation = 16 * density
             isClippingEnabled = true
-            setOnDismissListener { if (popupWidgetWindow === this) popupWidgetWindow = null }
+            setOnDismissListener {
+                if (popupWidgetWindow === this) {
+                    popupWidgetWindow = null
+                    popupWidgetCard = null
+                    popupWidgetHost = null
+                }
+            }
         }
         val anchorX = location[0]
         val anchorY = location[1]
@@ -5578,11 +5619,117 @@ class LauncherActivity :
             card.scaleX = 0.94f
             card.scaleY = 0.94f
         }
+        popupWidgetX = x
+        popupWidgetY = y
+        popupWidgetW = cardW
+        popupWidgetH = cardH
+        popupWidgetMinW = peekMinW.coerceAtMost(maxCardW)
+        popupWidgetMaxW = right - x
+        popupWidgetMinH = peekMinH.coerceAtMost(maxCardH)
+        popupWidgetMaxH = bottom - y
         popup.showAtLocation(anchor ?: root, android.view.Gravity.NO_GRAVITY, x, y)
         if (animate) {
             card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140L).start()
         }
         popupWidgetWindow = popup
+    }
+
+    // A pop-up's own controls, on long-press. The workspace draws the
+    // standard widget frame (resize handles, remove) itself; a pop-up is a
+    // window of ours, so its size and removal live here instead.
+    private fun showPopupWidgetControls(item: LauncherItem) {
+        val live = viewModel.state.value.model.items.firstOrNull { it.id == item.id } ?: item
+        val resized = live.popupWidthDp != null || live.popupHeightDp != null
+        val choices = buildList<Pair<String, () -> Unit>> {
+            add(getString(R.string.popup_widget_resize) to { startPopupWidgetResize(live) })
+            if (resized) {
+                add(getString(R.string.popup_widget_reset_size) to {
+                    viewModel.setPopupWidgetSize(live.id, null, null)
+                    popupWidgetWindow?.dismiss()
+                    Toast.makeText(this@LauncherActivity, R.string.popup_widget_size_reset, Toast.LENGTH_SHORT).show()
+                })
+            }
+            add(getString(R.string.popup_widget_change) to {
+                popupWidgetWindow?.dismiss()
+                widgets.showPickerForPopup(live)
+            })
+            add(getString(R.string.popup_widget_remove) to {
+                popupWidgetWindow?.dismiss()
+                live.popupWidget?.appWidgetId?.let(widgets::releaseWidgetId)
+                viewModel.clearPopupWidget(live.id)
+                Toast.makeText(this@LauncherActivity, R.string.popup_widget_removed, Toast.LENGTH_SHORT).show()
+            })
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(widgets.popupWidgetLabel(live) ?: getString(R.string.popup_widget_title))
+            .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
+                choices.getOrNull(which)?.second?.invoke()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    // The grip in the card's corner: a drag sets the card's width and height,
+    // remembered per icon. Growing stops at the display edge; shrinking at
+    // the widget's own minimum.
+    private fun startPopupWidgetResize(item: LauncherItem) {
+        val popup = popupWidgetWindow ?: return
+        val card = popupWidgetCard ?: return
+        if (card.findViewWithTag<View>("popup-resize") != null) return
+        val density = resources.displayMetrics.density
+        val size = (30 * density).toInt()
+        val grip = android.widget.ImageView(this).apply {
+            tag = "popup-resize"
+            setImageResource(R.drawable.ic_popup_resize)
+            background = androidx.core.content.ContextCompat
+                .getDrawable(this@LauncherActivity, R.drawable.bg_popup_grip)
+            contentDescription = getString(R.string.popup_widget_resize)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            val inset = (6 * density).toInt()
+            setPadding(inset, inset, inset, inset)
+        }
+        val margin = (4 * density).toInt()
+        card.addView(
+            grip,
+            android.widget.FrameLayout.LayoutParams(
+                size, size, android.view.Gravity.BOTTOM or android.view.Gravity.END
+            ).apply { setMargins(0, 0, margin, margin) }
+        )
+        val startW = popupWidgetW
+        val startH = popupWidgetH
+        var downX = 0f
+        var downY = 0f
+        grip.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    downY = event.rawY
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val w = (startW + event.rawX - downX).toInt()
+                        .coerceIn(popupWidgetMinW, popupWidgetMaxW)
+                    val h = (startH + event.rawY - downY).toInt()
+                        .coerceIn(popupWidgetMinH, popupWidgetMaxH)
+                    if (w != popupWidgetW || h != popupWidgetH) {
+                        popupWidgetW = w
+                        popupWidgetH = h
+                        popup.update(popupWidgetX, popupWidgetY, w, h)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP,
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    viewModel.setPopupWidgetSize(
+                        item.id,
+                        Math.round(popupWidgetW / density),
+                        Math.round(popupWidgetH / density)
+                    )
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     // A swipe-to-open folder's tap: the first app its window shows, launched
@@ -5879,6 +6026,11 @@ class LauncherActivity :
     }
 
     companion object {
+        // The smallest a pop-up widget card may be dragged, in dp: below the
+        // provider's cell minimum, which is usually most of a phone screen.
+        private const val POPUP_WIDGET_MIN_W_DP = 160
+        private const val POPUP_WIDGET_MIN_H_DP = 120
+
         // Reachability: how much of the home's height it comes down by, and
         // how much room the bottom-shifted drawer leaves above its list.
         private const val REACHABILITY_FRACTION = 0.34f

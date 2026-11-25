@@ -837,6 +837,22 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    // The pop-up card's size, from its resize grip: null goes back to the
+    // widget's own minimum.
+    suspend fun setPopupWidgetSize(itemId: String, widthDp: Int?, heightDp: Int?) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId) {
+                        item.copy(popupWidthDp = widthDp, popupHeightDp = heightDp)
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
     // A restore's fresh id for an icon's pop-up widget, as for a stack member.
     suspend fun setPopupWidgetId(itemId: String, appWidgetId: Int) {
         mutate { current ->

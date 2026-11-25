@@ -1097,8 +1097,12 @@
     <string name="popup_widget_remove">Remove popup widget</string>
     <string name="popup_widget_removed">Popup widget removed</string>
     <string name="popup_widget_unavailable">That widget is no longer available \u2014 pick another</string>
+    <string name="popup_widget_resize">Resize</string>
+    <string name="popup_widget_reset_size">Reset size</string>
+    <string name="popup_widget_change">Change widget</string>
+    <string name="popup_widget_size_reset">Size reset</string>
     <string name="popup_widget_hint_title">Popup widget</string>
-    <string name="popup_widget_hint">Swipe the icon to peek at its widget. Tap outside the widget, or press Back, to put it away.</string>
+    <string name="popup_widget_hint">Swipe the icon to peek at its widget. Long-press it to resize it, change it or remove it. Tap outside the widget, or press Back, to put it away.</string>
     <string name="action_popup_widget">Popup widget</string>
     <string name="feed_notifications_title">Notifications</string>
     <string name="feed_show_notifications">The newest ones this device can badge, read-only</string>

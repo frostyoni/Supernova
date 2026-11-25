@@ -93,6 +93,10 @@ data class LauncherItem(
     // at it. The same member shape as a stack's, so restore, backup and
     // release treat it alike; null when the icon has none.
     val popupWidget: WidgetStackMember? = null,
+    // Any item: the pop-up's own card size, in dp. Null opens at the
+    // widget's minimum size.
+    val popupWidthDp: Int? = null,
+    val popupHeightDp: Int? = null,
     // Widgets only: cellX/cellY/spanX/spanY count half cells, for a widget
     // placed or sized with subgrid positioning on. WorkspaceGeometry.itemRect
     // reads it; nothing else should use those four fields raw.
