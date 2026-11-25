@@ -4008,11 +4008,11 @@ class LauncherActivity :
         val placed = item.takeIf { shortcut == null }
         // A pop-up widget belongs to an icon, not to the app: only a placed
         // app or shortcut offers it.
-        // Only a home icon: a dock icon has no swipes, and a folder member's
-        // run in the folder's own window, where a pop-up anchored at the icon
-        // could not fit. Their rows stay out.
+        // A dock icon has no swipes, so it offers none; a folder member's
+        // swipe runs in the folder's own window, which the card is placed
+        // against the display to handle.
         val popupItem = item.takeIf {
-            it.container == ContainerType.WORKSPACE &&
+            (it.container == ContainerType.WORKSPACE || it.container == ContainerType.FOLDER) &&
                 (it.itemType == ItemType.APP || it.itemType == ItemType.SHORTCUT)
         }
         val livePopup = { viewModel.state.value.model.items.firstOrNull { it.id == item.id } }
@@ -4412,11 +4412,12 @@ class LauncherActivity :
             add(GestureAction.JUMP_TO_PAGE)
             // A folder's own swipes can open one of its apps by position.
             if (item.itemType == ItemType.FOLDER) add(GestureAction.LAUNCH_FOLDER_ITEM)
-            // A home icon's swipe can peek at a widget bound to it; a dock
-            // icon has no swipes, and a folder member's sit in the folder's
-            // own window, with no place to show one.
-            if (item.container == ContainerType.WORKSPACE &&
-                (item.itemType == ItemType.APP || item.itemType == ItemType.SHORTCUT)
+            // An icon's swipe can peek at a widget bound to it: an app, a
+            // shortcut, a folder, or one of a folder's apps. A dock icon has
+            // no swipes, so it is not offered.
+            if (item.container != ContainerType.DOCK &&
+                (item.itemType == ItemType.APP || item.itemType == ItemType.SHORTCUT ||
+                    item.itemType == ItemType.FOLDER)
             ) {
                 add(GestureAction.SHOW_POPUP_WIDGET)
             }
@@ -5464,9 +5465,6 @@ class LauncherActivity :
     // view, so its taps and scrolling work; Back or a touch outside puts it
     // away, as does leaving the launcher (a widget tap opens an app).
     private fun showPopupWidget(item: LauncherItem, anchor: View?) {
-        // Its coordinates and insets are this window's; a folder's icon has
-        // a window of its own and the card would not fit in it.
-        if (anchor != null && anchor.rootView !== binding.root) return
         val hostView = widgets.popupHostView(item)
         if (hostView == null) {
             Toast.makeText(this, R.string.popup_widget_unavailable, Toast.LENGTH_SHORT).show()
@@ -5480,16 +5478,34 @@ class LauncherActivity :
         val gap = px(10)
         val padding = px(8)
         val root = binding.root
-        val windowW = root.width
-        val windowH = root.height
+        // Screen coordinates: a folder icon lives in the folder's own window,
+        // so the card has to be placed against the display, not one window.
+        val windowW = resources.displayMetrics.widthPixels
+        val windowH = resources.displayMetrics.heightPixels
         if (windowW == 0 || windowH == 0) return
         val insets = androidx.core.view.ViewCompat.getRootWindowInsets(root)
             ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             ?: androidx.core.graphics.Insets.NONE
-        val left = insets.left + margin
-        val top = insets.top + margin
-        val right = windowW - insets.right - margin
-        val bottom = windowH - insets.bottom - margin
+        // A pop-up is placed in the coordinates of the window it is anchored
+        // in - the activity's, or a folder's own - while the room it has is
+        // the display's. The anchor's two positions give that window's origin.
+        val location = IntArray(2)
+        val onScreen = IntArray(2)
+        if (anchor != null) {
+            anchor.getLocationInWindow(location)
+            anchor.getLocationOnScreen(onScreen)
+        } else {
+            location[0] = root.width / 2
+            location[1] = root.height / 2
+            onScreen[0] = location[0]
+            onScreen[1] = location[1]
+        }
+        val originX = onScreen[0] - location[0]
+        val originY = onScreen[1] - location[1]
+        val left = insets.left + margin - originX
+        val top = insets.top + margin - originY
+        val right = windowW - insets.right - margin - originX
+        val bottom = windowH - insets.bottom - margin - originY
         val (minW, minH) = widgets.popupWidgetMinSize(item)
         val cardW = (px(minW.coerceAtLeast(160)) + padding * 2).coerceAtMost(right - left)
         val cardH = (px(minH.coerceAtLeast(120)) + padding * 2).coerceAtMost(bottom - top)
@@ -5529,8 +5545,6 @@ class LauncherActivity :
             isClippingEnabled = true
             setOnDismissListener { if (popupWidgetWindow === this) popupWidgetWindow = null }
         }
-        val location = IntArray(2)
-        anchor?.getLocationInWindow(location)
         val anchorX = location[0]
         val anchorY = location[1]
         val anchorW = anchor?.width ?: 0

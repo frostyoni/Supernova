@@ -91,8 +91,9 @@ edges known · **dropped** = considered and deliberately not done.
   icon's swipe picker with nothing bound, which asks for the widget and then
   binds that swipe. One host view per widget, so a second peek does not reload
   it; rebound from backups and released with the icon. Tap outside the card or
-  press Back to put it away. Home icons only: dock icons have no swipes, and a
-  folder's window has no room for a card.
+  press Back to put it away. An app, a shortcut, a folder, or an app inside a
+  folder; a dock icon has no swipes, so it has none. The card is placed against
+  the display rather than one window, so it also opens over a folder.
 
 - **Dock suggestions** — *stable*. Off by default (Dock → Suggestions): the main
   page's empty slots fill with apps used recently, excluding the dock's own
