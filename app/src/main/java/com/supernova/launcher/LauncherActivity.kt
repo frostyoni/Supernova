@@ -4448,10 +4448,39 @@ class LauncherActivity :
             when (pick) {
                 com.supernova.launcher.ui.ActionPick.None -> save(null, null)
                 is com.supernova.launcher.ui.ActionPick.Action ->
-                    if (pick.action == GestureAction.SHOW_POPUP_WIDGET && item.popupWidget == null) {
-                        // Nothing to peek at yet: pick the widget first, and
-                        // the bind sets this swipe to open it.
-                        widgets.showPickerForPopup(item, down)
+                    if (pick.action == GestureAction.SHOW_POPUP_WIDGET) {
+                        if (item.popupWidget == null) {
+                            // Nothing to peek at yet: pick the widget first,
+                            // and the bind sets this swipe to open it.
+                            widgets.showPickerForPopup(item, down)
+                        } else {
+                            // One is bound: keep it, or choose another. Just
+                            // re-saving the action silently kept the old one,
+                            // with no way to change it from this picker.
+                            val label = widgets.popupWidgetLabel(item)
+                                ?: getString(R.string.popup_widget_title)
+                            MaterialAlertDialogBuilder(this)
+                                .setTitle(R.string.popup_widget_title)
+                                .setItems(
+                                    arrayOf(
+                                        getString(R.string.popup_widget_use, label),
+                                        getString(R.string.popup_widget_change)
+                                    )
+                                ) { _, which ->
+                                    if (which == 0) {
+                                        save(
+                                            com.supernova.launcher.gesture.ActionShortcut.encode(
+                                                GestureAction.SHOW_POPUP_WIDGET
+                                            ),
+                                            pick.label
+                                        )
+                                    } else {
+                                        widgets.showPickerForPopup(item, down)
+                                    }
+                                }
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show()
+                        }
                     } else {
                         save(com.supernova.launcher.gesture.ActionShortcut.encode(pick.action), pick.label)
                     }
@@ -5621,13 +5650,19 @@ class LauncherActivity :
                 if (tabUp) topMargin = tabDrop else bottomMargin = tabDrop
             }
         )
+        // Under the icon, not under the card's centre: an icon at a screen
+        // edge opens a card clamped inward, and a centred tab would point at
+        // nothing. Clamped so it stays clear of the rounded corners.
+        val tabW = px(44)
+        val tabInset = px(20)
+        val tabLeft = (centerX - x - tabW / 2).coerceIn(tabInset, cardW - tabW - tabInset)
         content.addView(
             tab,
             android.widget.FrameLayout.LayoutParams(
-                px(44), tabHeight,
+                tabW, tabHeight,
                 (if (tabUp) android.view.Gravity.TOP else android.view.Gravity.BOTTOM) or
-                    android.view.Gravity.CENTER_HORIZONTAL
-            )
+                    android.view.Gravity.LEFT
+            ).apply { leftMargin = tabLeft }
         )
         val popup = android.widget.PopupWindow(content, cardW, windowCardH, true).apply {
             isOutsideTouchable = true

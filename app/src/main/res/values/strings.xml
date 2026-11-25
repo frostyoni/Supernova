@@ -1100,6 +1100,7 @@
     <string name="popup_widget_resize">Resize</string>
     <string name="popup_widget_reset_size">Reset size</string>
     <string name="popup_widget_change">Change widget</string>
+    <string name="popup_widget_use">Use %1$s</string>
     <string name="popup_widget_size_reset">Size reset</string>
     <string name="popup_widget_hint_title">Popup widget</string>
     <string name="popup_widget_hint">Swipe the icon to peek at its widget. Tap the little tab by its edge to resize it, change it or remove it. Tap outside the card, or press Back, to put it away.</string>
