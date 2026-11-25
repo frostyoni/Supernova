@@ -23,6 +23,8 @@ import com.supernova.launcher.databinding.ItemFeedContactsBinding
 import com.supernova.launcher.databinding.ItemFeedCustomBinding
 import com.supernova.launcher.databinding.ItemFeedEmptyBinding
 import com.supernova.launcher.databinding.ItemFeedMediaBinding
+import com.supernova.launcher.databinding.ItemFeedNotificationRowBinding
+import com.supernova.launcher.databinding.ItemFeedNotificationsBinding
 import com.supernova.launcher.databinding.ItemFeedUsageBinding
 import com.supernova.launcher.databinding.ItemFeedUsageRowBinding
 import com.supernova.launcher.feed.CalendarCardSource
@@ -30,6 +32,7 @@ import com.supernova.launcher.feed.ContactsCardSource
 import com.supernova.launcher.feed.FeedCard
 import com.supernova.launcher.feed.FeedOrder
 import com.supernova.launcher.feed.MediaCardSource
+import com.supernova.launcher.feed.NotificationsCardSource
 import com.supernova.launcher.feed.UsageCardSource
 import com.supernova.launcher.runLogged
 
@@ -69,6 +72,8 @@ class FeedAdapter(
         class CalendarRow(val state: CalendarCardSource.CalendarState) : Row(FeedOrder.CALENDAR, FeedOrder.Group.REST)
         class Contacts(val state: ContactsCardSource.ContactsState) : Row(FeedOrder.CONTACTS, FeedOrder.Group.REST)
         class Usage(val state: UsageCardSource.UsageState) : Row(FeedOrder.USAGE, FeedOrder.Group.REST)
+        class Notifications(val state: NotificationsCardSource.NotificationsState) :
+            Row(FeedOrder.NOTIFICATIONS, FeedOrder.Group.REST)
         class Custom(val card: FeedCard, cardGroup: FeedOrder.Group) : Row(card.id, cardGroup)
         object Footer : Row(null, null)
         // No card at all: the page explains itself. readyMade holds the
@@ -125,6 +130,7 @@ class FeedAdapter(
         is Row.CalendarRow -> TYPE_CALENDAR
         is Row.Contacts -> TYPE_CONTACTS
         is Row.Usage -> TYPE_USAGE
+        is Row.Notifications -> TYPE_NOTIFICATIONS
         is Row.Custom -> TYPE_CUSTOM
         Row.Footer -> TYPE_ADD
         is Row.Empty -> TYPE_EMPTY
@@ -138,6 +144,7 @@ class FeedAdapter(
             TYPE_CALENDAR -> CalendarHolder(ItemFeedCalendarBinding.inflate(inflater, parent, false))
             TYPE_CONTACTS -> ContactsHolder(ItemFeedContactsBinding.inflate(inflater, parent, false))
             TYPE_USAGE -> UsageHolder(ItemFeedUsageBinding.inflate(inflater, parent, false))
+            TYPE_NOTIFICATIONS -> NotificationsHolder(ItemFeedNotificationsBinding.inflate(inflater, parent, false))
             TYPE_CUSTOM -> CustomHolder(ItemFeedCustomBinding.inflate(inflater, parent, false))
             TYPE_EMPTY -> EmptyHolder(ItemFeedEmptyBinding.inflate(inflater, parent, false))
             else -> AddHolder(ItemFeedAddBinding.inflate(inflater, parent, false))
@@ -150,6 +157,7 @@ class FeedAdapter(
             is Row.CalendarRow -> (holder as CalendarHolder).bind(row.state)
             is Row.Contacts -> (holder as ContactsHolder).bind(row.state)
             is Row.Usage -> (holder as UsageHolder).bind(row.state)
+            is Row.Notifications -> (holder as NotificationsHolder).bind(row.state)
             is Row.Custom -> (holder as CustomHolder).bind(row.card)
             Row.Footer -> (holder as AddHolder).bind()
             is Row.Empty -> (holder as EmptyHolder).bind(row.readyMade)
@@ -414,6 +422,43 @@ class FeedAdapter(
         }
     }
 
+    private inner class NotificationsHolder(private val binding: ItemFeedNotificationsBinding) :
+        RecyclerView.ViewHolder(binding.root) {
+
+        fun bind(state: NotificationsCardSource.NotificationsState) {
+            tintCard(binding.root)
+            binding.notificationsHeader.setTextColor(accentColor)
+            binding.notificationsRows.removeAllViews()
+            val context = binding.root.context
+            val muted = (0xB3 shl 24) or (textColor and 0xFFFFFF)
+            binding.notificationsEmpty.setTextColor(muted)
+            binding.notificationsEmpty.setText(
+                if (state.access) R.string.feed_notifications_empty
+                else R.string.feed_notifications_access_off
+            )
+            binding.notificationsEmpty.visibility =
+                if (state.rows.isEmpty()) View.VISIBLE else View.GONE
+            val inflater = LayoutInflater.from(context)
+            state.rows.forEach { row ->
+                val item = ItemFeedNotificationRowBinding.inflate(inflater, binding.notificationsRows, false)
+                item.notificationIcon.setImageDrawable(callbacks.appIcon(row.app))
+                item.notificationTitle.text = row.item.title.ifBlank { row.app.label }
+                item.notificationTitle.setTextColor(textColor)
+                item.notificationText.text = row.item.text
+                item.notificationText.setTextColor(muted)
+                item.notificationText.visibility =
+                    if (row.item.text.isBlank()) View.GONE else View.VISIBLE
+                item.root.contentDescription =
+                    context.getString(R.string.feed_notifications_open, row.app.label)
+                // The notification's own intent, as the shade would send it.
+                item.root.setOnClickListener {
+                    runCatching { row.item.contentIntent?.send() }
+                }
+                binding.notificationsRows.addView(item.root)
+            }
+        }
+    }
+
     private object CircleOutline : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
             outline.setOval(0, 0, view.width, view.height)
@@ -432,6 +477,7 @@ class FeedAdapter(
         private const val TYPE_ADD = 4
         private const val TYPE_EMPTY = 5
         private const val TYPE_USAGE = 6
+        private const val TYPE_NOTIFICATIONS = 7
 
         // Corner radius of a usage bar.
         private const val BAR_RADIUS_DP = 2

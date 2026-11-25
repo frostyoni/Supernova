@@ -1471,6 +1471,16 @@ object SettingsCatalogue {
                         set = { viewModel.set(Pref.feedShowUsage, it) }
                     ).waitsOn(R.string.feed_enabled, feedOff)
                 )
+                // Read-only, and only from the notification access already
+                // granted for badges.
+                add(
+                    SettingItem.Toggle(
+                        R.string.feed_notifications_title,
+                        subtitle = R.string.feed_show_notifications,
+                        get = { it.feedShowNotifications },
+                        set = { viewModel.set(Pref.feedShowNotifications, it) }
+                    ).waitsOn(R.string.feed_enabled, feedOff)
+                )
                 add(SettingItem.Row(R.string.cards_add, onClick = actions.addCard)
                     .waitsOn(R.string.feed_enabled, feedOff))
                 // The cards' color and opacity: the Style tab's Cards row.

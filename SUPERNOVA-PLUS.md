@@ -94,6 +94,11 @@ edges known · **dropped** = considered and deliberately not done.
 - **Usage feed card** — *stable*. Top apps by launch counts the launcher already
   keeps locally, with proportional bars; tap to launch. No permission, no polling,
   nothing running while the feed is hidden.
+- **Notification glance card** — *stable*. The newest **badged** notifications,
+  read-only, newest first; a tap sends the notification's own content intent.
+  Uses only the notification access already granted for badges, nothing is read
+  while the card is off screen, and without access the card says so instead of
+  looking empty. Off by default (Feed settings → Notifications).
 - **Reachability** — *stable*. A bindable action (Gestures → any gesture →
   Reachability): the home's grid comes down a third with a dimmed band above it;
   tap the band, repeat the action, or leave the launcher to put it back. Ignored

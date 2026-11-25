@@ -23,6 +23,16 @@ data class NotificationPreview(
     val postTime: Long
 )
 
+// One badged notification, flattened for the feed's glance card. Read-only:
+// the launcher never dismisses or replies from here.
+data class NotificationGlance(
+    val appKey: String,
+    val title: String,
+    val text: String,
+    val contentIntent: PendingIntent?,
+    val postTime: Long
+)
+
 // What a Dynamic badge shows for an app: its newest badged notification's
 // sender (a chat's MessagingStyle person), else its large icon (a contact
 // photo, album art), else its conversation shortcut, else its small icon on
@@ -263,5 +273,18 @@ class SupernovaNotificationListener : NotificationListenerService() {
 
         fun previewsFor(packageName: String, userHash: Int): List<NotificationPreview> =
             previews["$userHash/$packageName"].orEmpty()
+
+        // The newest badged notifications across apps, newest first. Only the
+        // ones kept for the badge previews - the same privacy boundary: an app
+        // with no badge contributes nothing.
+        fun glance(): List<NotificationGlance> =
+            previews.entries
+                .flatMap { (key, list) ->
+                    list.map { NotificationGlance(key, it.title, it.text, it.contentIntent, it.postTime) }
+                }
+                .sortedByDescending { it.postTime }
+                .take(GLANCE_LIMIT)
+
+        private const val GLANCE_LIMIT = 6
     }
 }

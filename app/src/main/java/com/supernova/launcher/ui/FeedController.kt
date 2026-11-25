@@ -16,6 +16,7 @@ import com.supernova.launcher.feed.CalendarCardSource
 import com.supernova.launcher.feed.ContactsCardSource
 import com.supernova.launcher.feed.FeedOrder
 import com.supernova.launcher.feed.MediaCardSource
+import com.supernova.launcher.feed.NotificationsCardSource
 import com.supernova.launcher.feed.UsageCardSource
 import com.supernova.launcher.ui.theme.Styles
 import com.supernova.launcher.ui.theme.SurfaceId
@@ -122,6 +123,14 @@ class FeedController(
     private val usageSource = UsageCardSource(
         counts = { viewModel.launchCounts() },
         apps = { viewModel.visibleApps() }
+    )
+    // Read-only, and only from the access already granted for badges.
+    private val notificationsSource = NotificationsCardSource(
+        apps = { viewModel.visibleApps() },
+        enabled = { com.supernova.launcher.notification.SupernovaNotificationListener.isEnabled(context) },
+        userHash = { app ->
+            viewModel.appCatalog().userForSerial(app.userSerial)?.hashCode() ?: 0
+        }
     )
     private var collectJob: Job? = null
 
@@ -444,11 +453,13 @@ class FeedController(
         calendarSource.onShown()
         contactsSource.onShown()
         usageSource.onShown()
+        notificationsSource.onShown()
         collectJob = scope.launch {
             launch {
                 combine(
-                    mediaSource.state, calendarSource.state, contactsSource.state, usageSource.state
-                ) { _, _, _, _ -> Unit }.collect { rebuild() }
+                    mediaSource.state, calendarSource.state, contactsSource.state,
+                    usageSource.state, notificationsSource.state
+                ) { _, _, _, _, _ -> Unit }.collect { rebuild() }
             }
             launch {
                 // Launch counts move as apps open, a tap in this very card
@@ -456,6 +467,12 @@ class FeedController(
                 // while the pane is hidden - this collector is cancelled with
                 // the rest.
                 viewModel.launchGeneration.collect { usageSource.refresh() }
+            }
+            launch {
+                // The listener refreshes on posts and removals; the glance
+                // follows while the pane is open, and stops with the rest.
+                com.supernova.launcher.notification.SupernovaNotificationListener.badgeState
+                    .collect { notificationsSource.refresh() }
             }
             launch {
                 // Card edits made while the pane is open (editor sheet on top),
@@ -481,6 +498,7 @@ class FeedController(
         calendarSource.onHidden()
         contactsSource.onHidden()
         usageSource.onHidden()
+        notificationsSource.onHidden()
     }
 
     // In-card permission grants land while the pane is open; re-pull both
@@ -534,6 +552,11 @@ class FeedController(
         if (prefs.feedShowUsage) {
             usageSource.state.value?.let { builtIns[FeedOrder.USAGE] = FeedAdapter.Row.Usage(it) }
         }
+        if (prefs.feedShowNotifications) {
+            notificationsSource.state.value?.let {
+                builtIns[FeedOrder.NOTIFICATIONS] = FeedAdapter.Row.Notifications(it)
+            }
+        }
         val rows = ArrayList<FeedAdapter.Row>()
         FeedOrder.layout(viewModel.feedOrder(), viewModel.feedCards(), builtIns.keys).forEach { entry ->
             val card = entry.card
@@ -550,7 +573,8 @@ class FeedController(
         FeedOrder.MEDIA.takeUnless { prefs.feedShowMedia },
         FeedOrder.CALENDAR.takeUnless { prefs.feedShowCalendar },
         FeedOrder.CONTACTS.takeUnless { prefs.feedShowContacts },
-        FeedOrder.USAGE.takeUnless { prefs.feedShowUsage }
+        FeedOrder.USAGE.takeUnless { prefs.feedShowUsage },
+        FeedOrder.NOTIFICATIONS.takeUnless { prefs.feedShowNotifications }
     )
 
     // A ready-made card turned on from the empty page; calendar and contacts
@@ -570,6 +594,8 @@ class FeedController(
                 host.requestContactsPermission()
             }
             FeedOrder.USAGE -> viewModel.set(com.supernova.launcher.data.Pref.feedShowUsage, true)
+            FeedOrder.NOTIFICATIONS ->
+                viewModel.set(com.supernova.launcher.data.Pref.feedShowNotifications, true)
         }
     }
 

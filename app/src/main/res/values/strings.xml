@@ -1092,6 +1092,11 @@
     <string name="feed_calendar_permission">Allow calendar access to see upcoming events</string>
     <string name="feed_contacts_title">Starred contacts</string>
     <string name="feed_contacts_permission">Allow contacts access to see starred contacts</string>
+    <string name="feed_notifications_title">Notifications</string>
+    <string name="feed_show_notifications">The newest ones this device can badge, read-only</string>
+    <string name="feed_notifications_empty">Nothing waiting right now</string>
+    <string name="feed_notifications_access_off">Turn on notification access to see them here</string>
+    <string name="feed_notifications_open">Open the notification from %1$s</string>
     <string name="feed_usage_title">App usage</string>
     <string name="feed_show_usage">Show the apps you open most</string>
     <string name="feed_usage_empty">Apps you open show up here, counted on this device</string>

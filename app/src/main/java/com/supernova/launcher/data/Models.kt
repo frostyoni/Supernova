@@ -581,6 +581,7 @@ data class LauncherPrefs(
     val feedShowContacts: Boolean = false,
     // The most-opened apps, from the launcher's own launch counts.
     val feedShowUsage: Boolean = false,
+    val feedShowNotifications: Boolean = false,
     // How many rows of suggested-shortcut pills the feed shows
     // ("Suggested shortcuts rows"), 1..3.
     val feedShortcutRows: Int = 1,
