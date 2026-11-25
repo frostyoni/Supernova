@@ -76,7 +76,12 @@ class FolderPopup(private val context: Context) {
         // The screen y the card stays above: the dock's top, so a folder
         // opened from the dock or the home grid never covers the dock's
         // icons. Null leaves the whole screen to it.
-        keepAboveScreenY: Int? = null
+        keepAboveScreenY: Int? = null,
+        // The view whose window hosts the popup. The anchor is in the
+        // activity's window normally; a folder opened from inside another
+        // folder has an anchor in that folder's window, and anchoring the
+        // new card to a window that is going away was a BadToken crash.
+        windowAnchor: View = anchor
     ): PopupWindow {
         // A drawer folder can be opened with the drawer's search keyboard up;
         // the card takes focus and would drop it a step late otherwise.
@@ -374,7 +379,7 @@ class FolderPopup(private val context: Context) {
         }
 
         if (immersive) layOutInScreen(popup, binding.root)
-        popup.showAtLocation(anchor, Gravity.CENTER, 0, 0)
+        popup.showAtLocation(windowAnchor, Gravity.CENTER, 0, 0)
         if (immersive) layOutBehindBars(binding.root)
         return popup
     }

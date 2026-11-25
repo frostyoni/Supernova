@@ -4760,6 +4760,9 @@ class LauncherActivity :
             animate = Animations.enabled(prefs),
             speed = Animations.factor(prefs),
             keepAboveScreenY = dockTopOnScreen(),
+            // A nested card is hosted by the activity, not by the window of
+            // the folder it was opened from: that window can be closing.
+            windowAnchor = if (nested) binding.root else anchor,
             onRename = { viewModel.renameFolder(folder.id, it) },
             // The title row's overflow: Select apps and Sort, as the folder's
             // long-press has them. Opened by a tap, so modal at once, and the
