@@ -96,7 +96,9 @@ edges known · **dropped** = considered and deliberately not done.
   provider's grid minimum to a readable floor, and the size is remembered per
   icon), **Reset size**, **Change widget**, **Remove popup widget**. The tab is
   outside the widget, so a widget that treats long-press or sliding as its own
-  never loses it. Tap outside the card or press Back to put it away. An app, a
+  never loses it. A peek from an app inside a folder leaves the folder open -
+  it is an overlay, not a launch - so dismissing the card returns you to the
+  folder. Tap outside the card or press Back to put it away. An app, a
   shortcut, a folder, or an app inside a folder; a dock icon has no swipes, so
   it has none. The card is placed against the display in the activity's own
   window, so a folder member's card opens at its icon even in a dock folder,

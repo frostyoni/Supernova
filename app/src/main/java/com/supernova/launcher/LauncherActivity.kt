@@ -5499,7 +5499,13 @@ class LauncherActivity :
         // a pop-up anchored at it opens at the top-left instead.
         val location = IntArray(2)
         v.getLocationOnScreen(location)
-        inFolder?.invoke()
+        // A peek does not go anywhere, so it leaves the folder open, both to
+        // keep your place and because closing it is what the launch actions
+        // do. Everything else still gives way to what it opens.
+        val action = if (up) item.swipeAction else item.swipeActionDown
+        val peek = com.supernova.launcher.gesture.ActionShortcut.decode(action)?.action ==
+            GestureAction.SHOW_POPUP_WIDGET
+        if (!peek) inFolder?.invoke()
         when {
             up && opensOnSwipe -> showFolderPopup(v, item)
             up -> launchSwipeAction(
