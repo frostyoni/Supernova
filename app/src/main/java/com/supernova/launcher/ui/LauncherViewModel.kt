@@ -177,6 +177,7 @@ class LauncherViewModel(
     private var appliedThemedSig: String? = null
     private var appliedNight: Boolean? = null
     private var autoBackupWritten = false
+    private var shortcutsRepinned = false
 
     // Whether each of the two icon-configuration collectors has applied its
     // first emission. The startup scan waits for both: a warm that runs
@@ -1622,6 +1623,8 @@ class LauncherViewModel(
 
     fun addPage() = persist { repository.addPage() }
 
+    fun addPageFirst() = persist { repository.addPageFirst() }
+
     fun removePage(page: Int, onRemoved: (() -> Unit)? = null) {
         viewModelScope.launch { if (repository.removePage(page)) onRemoved?.invoke() }
     }
@@ -1718,6 +1721,18 @@ class LauncherViewModel(
         viewModelScope.launch {
             val prefs = state.value.prefs
             withContext(Dispatchers.Default) { repository.writeAutoBackup(prefs) }
+        }
+    }
+
+    // Once per session, with the real layout loaded: the home screen's app
+    // shortcuts pinned again where a pin went missing - a layout restored
+    // before this launcher held the home role couldn't pin them then.
+    fun repinShortcutsOnce() {
+        if (shortcutsRepinned) return
+        shortcutsRepinned = true
+        val items = state.value.model.items
+        viewModelScope.launch(Dispatchers.IO) {
+            com.supernova.launcher.data.ShortcutPins.repin(getApplication(), items)
         }
     }
 

@@ -256,7 +256,7 @@ object SettingsCatalogue {
                     bar.copy(chips = if (on) without + chip.name else without)
                 }
             }
-        )
+        ).foundByOldName(chip)
 
         // Custom is offered once there is a file behind it, and while it is
         // the value in force: a name that drew nothing would be a dead pick.
@@ -446,18 +446,6 @@ object SettingsCatalogue {
                         R.string.label_shadow, R.string.label_single_line
                     )
                 ),
-                // Only does something where labels may take two lines: the
-                // drawer and folders, whose rows otherwise follow their
-                // longest label (#347).
-                SettingItem.Toggle(
-                    R.string.label_even_rows,
-                    get = { it.labelEvenRows },
-                    set = { viewModel.set(Pref.labelEvenRows, it) },
-                    subtitle = R.string.label_even_rows_summary
-                ).waitsOn(R.string.label_group) {
-                    LabelStyler.singleLineFor(LabelContext.DRAWER, it) &&
-                        LabelStyler.singleLineFor(LabelContext.FOLDER, it)
-                },
                 // The file a Custom font reads from, under the card that
                 // picks the font: the row shows the file's name, so it is
                 // clear which one every label draws with.
@@ -1016,6 +1004,7 @@ object SettingsCatalogue {
                 *labelOverrideItems(context, viewModel, actions, LabelContext.DRAWER) {
                     needsOn(R.string.drawer_labels, !it.drawerLabels)
                 }.toTypedArray(),
+                evenRowsItem(viewModel, LabelContext.DRAWER) { needsOn(R.string.drawer_labels, !it.drawerLabels) },
                 SettingItem.Toggle(
                     R.string.drawer_fast_scroller,
                     get = { it.drawerFastScroller },
@@ -1554,6 +1543,7 @@ object SettingsCatalogue {
                 *labelOverrideItems(context, viewModel, actions, LabelContext.FOLDER) {
                     needsOn(R.string.folder_labels, !it.folderLabels)
                 }.toTypedArray(),
+                evenRowsItem(viewModel, LabelContext.FOLDER) { needsOn(R.string.folder_labels, !it.folderLabels) },
                 SettingItem.Toggle(
                     R.string.folder_close_on_launch,
                     get = { it.folderCloseOnLaunch },
@@ -2410,6 +2400,32 @@ private val desktopBarOff: (LauncherPrefs) -> Boolean = {
     SearchBarPlacement.fromName(SearchBarPrefs.desktopBar(it).placement) == SearchBarPlacement.NONE
 }
 
+// The page's even row spacing (#347), under its labels: it only does
+// something where labels may take two lines, so it greys while they are
+// single-line - led to this page's own switch when its labels are
+// customized, else told it's the Home screen's.
+private fun evenRowsItem(
+    viewModel: LauncherViewModel,
+    labelContext: LabelContext,
+    sectionHidden: (LauncherPrefs) -> SettingItem.HiddenBy?
+): SettingItem {
+    fun customized(prefs: LauncherPrefs) = LabelConfig.decode(prefs.labelConfig).stored(labelContext).active()
+    return SettingItem.Toggle(
+        R.string.label_even_rows,
+        get = { LabelStyler.evenRows(labelContext, it) },
+        set = { on ->
+            viewModel.setAll(LabelStyler.evenRowsWrites(labelContext, on, viewModel.state.value.prefs))
+        },
+        subtitle = R.string.label_even_rows_summary
+    ).hiddenWhen(sectionHidden).nested().waitsOn(R.string.label_single_line) {
+        customized(it) && LabelStyler.singleLineFor(labelContext, it)
+    }.blockedWhen {
+        R.string.needs_two_line_labels.takeIf { _ ->
+            !customized(it) && LabelStyler.singleLineFor(labelContext, it)
+        }
+    }
+}
+
 private fun SettingItem.waitsOnDrawerField() = waitsOn(R.string.search_bar_placement, drawerFieldOff)
 
 private fun SettingItem.waitsOnDesktopBar() = waitsOn(R.string.search_bar_placement, desktopBarOff)
@@ -2426,6 +2442,7 @@ private fun feedBarButton(viewModel: LauncherViewModel, button: SearchBarChip) =
     // Gone with the feed's bar; greyed with the feed.
 ).hiddenWhen { needsOn(R.string.feed_show_search, !it.feedShowSearch) }
     .waitsOn(R.string.feed_enabled) { !it.feedEnabled }
+    .foundByOldName(button)
 
 private fun drawerButton(viewModel: LauncherViewModel, button: SearchBarChip) = SettingItem.Toggle(
     SearchBarButtons.label(button),
@@ -2434,7 +2451,11 @@ private fun drawerButton(viewModel: LauncherViewModel, button: SearchBarChip) = 
         val now = SearchBarButtons.decode(viewModel.state.value.prefs.drawerActionButtons)
         viewModel.set(Pref.drawerActionButtons, SearchBarButtons.encode(SearchBarButtons.toggled(now, button, on)))
     }
-).waitsOnDrawerField()
+).waitsOnDrawerField().foundByOldName(button)
+
+// The store button was "Play Store" until #357; search still finds it so.
+internal fun SettingItem.foundByOldName(button: SearchBarChip): SettingItem =
+    if (button == SearchBarChip.PLAY_STORE) searchableBy(R.string.chip_play_store) else this
 
 // The two bars' slices of the searchBarConfig JSON, for their pages' rows
 // and previews: read one, or a prefs snapshot with one changed.

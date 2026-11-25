@@ -640,6 +640,13 @@ class AppCatalog(
             )
         return runCatching { launcherApps.getShortcuts(query, user) ?: emptyList() }
             .getOrElse { emptyList() }
+            // Only the shortcuts of an activity in the app list: apps that
+            // change their icon through activity-aliases declare the same set
+            // on every alias (YouTube listed four "Search"), and launchers ask
+            // for an icon's shortcuts by its activity (#361).
+            .filter { s ->
+                s.activity.let { it == null || resolveActivity(it.packageName, it.className, user) != null }
+            }
     }
 
     fun shortcutsFor(packageName: String, userSerial: Long): List<android.content.pm.ShortcutInfo> {
@@ -932,7 +939,7 @@ class AppCatalog(
     companion object {
         // Bumped when a render changes how an icon looks for the same
         // settings, so the disk cache starts over.
-        const val DISK_FORMAT = 1
+        const val DISK_FORMAT = 2
 
         // Marks a Large icon's copy in a cache key.
         const val LARGE_KEY = "^large"

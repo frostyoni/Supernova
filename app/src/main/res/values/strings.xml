@@ -4,7 +4,7 @@
          accessibility and notification-access lists); debug builds rename it. -->
     <string name="app_label">Supernova</string>
     <string name="settings">Settings</string>
-    <string name="set_default_launcher">Set as default launcher</string>
+    <string name="default_launcher">Default launcher</string>
     <string name="add_page">Add page</string>
     <string name="remove_page">Remove this page</string>
     <string name="page_removed">Page removed</string>
@@ -97,6 +97,7 @@
     <string name="backup_export_failed">Export failed: %1$s</string>
     <string name="backup_import_failed">Import failed: %1$s</string>
     <string name="shortcut_failed">Unable to launch shortcut</string>
+    <string name="shortcut_gone">This shortcut no longer exists. Add it again from %1$s.</string>
     <string name="unable_to_launch">Unable to launch %1$s</string>
     <string name="grid_rows">Rows</string>
     <string name="grid_cols">Columns</string>
@@ -720,7 +721,7 @@
     <string name="label_font">Label font</string>
     <string name="label_single_line">Single-line labels</string>
     <string name="label_even_rows">Even row spacing</string>
-    <string name="label_even_rows_summary">App drawer and folder rows keep room for two-line labels</string>
+    <string name="label_even_rows_summary">Rows keep room for two-line labels</string>
     <!-- The Home screen's Icon size bar and Label card. The card
          names its controls briefly because they sit under its "Label"
          header; search lists them by the longer names above. -->
@@ -968,6 +969,7 @@
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="contacts_permission_needed">Grant contacts permission to search contacts</string>
     <string name="chip_play_store">Play Store</string>
+    <string name="search_bar_chip_store">App store</string>
     <string name="chip_maps">Maps</string>
     <string name="chip_youtube">YouTube</string>
     <string name="chip_wikipedia">Wikipedia</string>
@@ -983,6 +985,7 @@
     <string name="needs_swipe_up_drawer">Needs Swipe up set to open the app drawer, in Gestures</string>
     <string name="needs_dock">Needs the dock, in Dock</string>
     <string name="needs_badges">Needs notification badges, in Icons &amp; labels</string>
+    <string name="needs_two_line_labels">Single-line labels are on, in Home screen</string>
     <string name="needs_animations">Animations are off, in Home screen</string>
     <string name="infinite_scroll_summary">Swipe past the last page to reach the first; turns off left/right swipe gestures</string>
     <string name="settings_search_no_matches">No settings match “%1$s”</string>
@@ -1064,7 +1067,7 @@
     <string name="hide_status_bar">Hide status bar</string>
     <string name="status_bar_icons">Status bar icon color</string>
     <string name="status_icons_auto">Follow theme</string>
-    <string name="status_icons_wallpaper">Based on wallpaper</string>
+    <string name="status_icons_wallpaper">Automatic</string>
     <string name="status_icons_dark">Dark icons</string>
     <string name="status_icons_light">Light icons</string>
     <string name="transparent_nav">Transparent navigation bar</string>
@@ -1242,6 +1245,8 @@
     <string name="quick_start">Quick start</string>
     <string name="quick_start_subtitle">Run the first-run setup again</string>
     <string name="restart_supernova">Restart Supernova</string>
+    <!-- The root list sits under the Supernova header (#360); Backup keeps the long form. -->
+    <string name="restart_link">Restart</string>
     <string name="restart_supernova_subtitle">Close and reopen the launcher</string>
     <string name="restart_launcher_q">Restart Supernova?</string>
     <string name="restart_launcher_message">Settings and the home screen close and open again. Nothing is lost.</string>
