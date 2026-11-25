@@ -792,12 +792,14 @@ class SettingsPreviewView @JvmOverloads constructor(
             val night = (context.resources.configuration.uiMode and
                 android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
+            val glass = com.supernova.launcher.data.GlassPrefs.resolve(
+                prefs, night, dp(prefs.dockBgRadius).toFloat(), context.resources.displayMetrics.density
+            )
             return com.supernova.launcher.ui.LiquidGlassDrawable(
                 context,
-                if (night) com.supernova.launcher.data.IconGlass.SMOKED
-                else com.supernova.launcher.data.IconGlass.FROSTED,
-                dp(prefs.dockBgRadius).toFloat(),
-                lowSpec = prefs.lowSpec
+                glass.look,
+                glass.backdrop,
+                prefs.lowSpec
             ).also {
                 it.alpha = maxOf(android.graphics.Color.alpha(resolved.surface), (0.55f * 255).toInt())
             }

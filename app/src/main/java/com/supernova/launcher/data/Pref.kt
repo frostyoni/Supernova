@@ -11,6 +11,8 @@ import com.supernova.launcher.search.WebProvider
 import com.supernova.launcher.ui.AnimationSpeed
 import com.supernova.launcher.ui.BadgePosition
 import com.supernova.launcher.ui.DockBgStyle
+import com.supernova.launcher.ui.GlassBackdrop
+import com.supernova.launcher.ui.GlassTone
 import com.supernova.launcher.ui.DrawerSort
 import com.supernova.launcher.ui.DrawerStyle
 import com.supernova.launcher.ui.DrawerTabAlign
@@ -168,6 +170,17 @@ object Pref {
     val leftHanded = bool("left_handed")
     // Start the drawer list lower, in the thumb's half.
     val drawerBottomShift = bool("drawer_bottom_shift")
+    // The glass surface's optics; used by the dock's Liquid background and its
+    // settings preview.
+    val glassTone = choice("glass_tone", GlassTone.entries)
+    val glassBackdrop = choice("glass_backdrop", GlassBackdrop.entries)
+    val glassThickness = int("glass_thickness", 4..30)
+    val glassBlur = int("glass_blur", 2..24)
+    val glassDensity = int("glass_density", 0..100)
+    val glassSpecular = int("glass_specular", 0..100)
+    val glassFresnel = int("glass_fresnel", 0..100)
+    val glassDispersion = int("glass_dispersion", 0..8)
+    val glassLight = int("glass_light", 0..360)
     val iconScale = float("icon_scale", ICON_SCALE_MIN..ICON_SCALE_MAX)
     val showLabels = bool("show_labels")
     val wallpaperScroll = bool("wallpaper_scroll")

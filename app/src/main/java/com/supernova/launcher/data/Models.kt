@@ -220,6 +220,17 @@ data class LauncherPrefs(
     val leftHanded: Boolean = false,
     // The drawer list starts lower, leaving room above it.
     val drawerBottomShift: Boolean = false,
+    // The glass surface's optics (dock Liquid background + preview).
+    val glassTone: com.supernova.launcher.ui.GlassTone = com.supernova.launcher.ui.GlassTone.AUTO,
+    val glassBackdrop: com.supernova.launcher.ui.GlassBackdrop =
+        com.supernova.launcher.ui.GlassBackdrop.AUTO,
+    val glassThickness: Int = 14,
+    val glassBlur: Int = 9,
+    val glassDensity: Int = 28,
+    val glassSpecular: Int = 40,
+    val glassFresnel: Int = 55,
+    val glassDispersion: Int = 2,
+    val glassLight: Int = 225,
     // Dock rank space is page * dockCount + slot; extra pages swipe in place.
     val dockPages: Int = 1,
     val dockBgStyle: DockBgStyle = DockBgStyle.NONE,

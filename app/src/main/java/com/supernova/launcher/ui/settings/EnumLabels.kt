@@ -291,6 +291,21 @@ object EnumLabels {
     }
 
     @StringRes
+    fun of(style: com.supernova.launcher.ui.GlassTone): Int = when (style) {
+        com.supernova.launcher.ui.GlassTone.AUTO -> R.string.glass_tone_auto
+        com.supernova.launcher.ui.GlassTone.CLEAR -> R.string.glass_tone_clear
+        com.supernova.launcher.ui.GlassTone.FROSTED -> R.string.glass_tone_frosted
+        com.supernova.launcher.ui.GlassTone.SMOKED -> R.string.glass_tone_smoked
+    }
+
+    @StringRes
+    fun of(backdrop: com.supernova.launcher.ui.GlassBackdrop): Int = when (backdrop) {
+        com.supernova.launcher.ui.GlassBackdrop.AUTO -> R.string.glass_backdrop_auto
+        com.supernova.launcher.ui.GlassBackdrop.COLOURS -> R.string.glass_backdrop_colours
+        com.supernova.launcher.ui.GlassBackdrop.NONE -> R.string.glass_backdrop_none
+    }
+
+    @StringRes
     fun of(style: DockBgStyle): Int = when (style) {
         DockBgStyle.NONE -> R.string.dock_bg_none
         DockBgStyle.ROUNDED -> R.string.dock_bg_rounded

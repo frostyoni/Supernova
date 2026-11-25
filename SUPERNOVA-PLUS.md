@@ -66,7 +66,11 @@ edges known · **dropped** = considered and deliberately not done.
   Canvas fallback below Android 13 or if a driver rejects the program. On
   Android 13+ the wallpaper bitmap is not readable, so the backdrop is a soft
   field of the wallpaper's reported colours; where it is readable, the blurred
-  wallpaper. Applies to the dock only.
+  wallpaper. Applies to the dock only. Its optics are settings, under
+  Dock → Glass: tone (Auto/Clear/Frosted/Smoked), backdrop (Automatic/Wallpaper
+  colours/None), refraction, blur, tint depth, highlight, rim light, colour
+  split and light angle. The dock and its preview resolve the same look, so they
+  cannot drift apart.
 - **Custom label font** — *stable*. Pick a `.ttf`/`.otf`; it is validated before it
   is stored, then used by every label surface. The bytes ride in backups (4 MB
   cap) and a Remove row restores a system family.

@@ -31,7 +31,7 @@ import kotlin.math.min
 // or a field built from the wallpaper's colours, which the system does give.
 object GlassOptics {
 
-    class Look(
+    data class Look(
         val radiusPx: Float,
         // How far the bevel reaches into the pane, and how hard it bends.
         val thicknessPx: Float = 14f,

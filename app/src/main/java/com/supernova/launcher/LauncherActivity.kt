@@ -2824,12 +2824,17 @@ class LauncherActivity :
                 val night = (resources.configuration.uiMode and
                     android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                     android.content.res.Configuration.UI_MODE_NIGHT_YES
+                val glass = com.supernova.launcher.data.GlassPrefs.resolve(
+                    prefs,
+                    night,
+                    dp(prefs.dockBgRadius).toFloat(),
+                    resources.displayMetrics.density
+                )
                 com.supernova.launcher.ui.LiquidGlassDrawable(
                     this,
-                    if (night) com.supernova.launcher.data.IconGlass.SMOKED
-                    else com.supernova.launcher.data.IconGlass.FROSTED,
-                    dp(prefs.dockBgRadius).toFloat(),
-                    lowSpec = prefs.lowSpec
+                    glass.look,
+                    glass.backdrop,
+                    prefs.lowSpec
                 ).also {
                     // Glass needs to read as a surface even at the dock's
                     // usual low opacity; the slider can only add to that.

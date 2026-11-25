@@ -93,7 +93,34 @@ object TransitionPresets {
         )
     )
 
-    val all: List<CustomTransition> = listOf(nod, crossfade, drift, pop, lift, spin, curtain)
+    // A small 3D tilt from behind, unwinding as the page lands.
+    val tilt = CustomTransition(
+        name = "Tilt",
+        incoming = listOf(
+            CustomTransition.Chip(0f, 1f, CustomTransition.Channel.PITCH, 0f, 12f, CustomTransition.Ease.EASE_OUT),
+            CustomTransition.Chip(0f, 0.5f, CustomTransition.Channel.ALPHA, 1f, 0f, CustomTransition.Ease.EASE_OUT)
+        ),
+        outgoing = listOf(
+            CustomTransition.Chip(0f, 1f, CustomTransition.Channel.PITCH, 0f, -16f, CustomTransition.Ease.EASE_IN),
+            CustomTransition.Chip(0f, 0.7f, CustomTransition.Channel.ALPHA, 1f, 0f, CustomTransition.Ease.EASE_IN)
+        )
+    )
+
+    // The same turn around the vertical axis.
+    val flip = CustomTransition(
+        name = "Flip",
+        incoming = listOf(
+            CustomTransition.Chip(0f, 1f, CustomTransition.Channel.YAW, 0f, 20f, CustomTransition.Ease.EASE_OUT),
+            CustomTransition.Chip(0f, 0.5f, CustomTransition.Channel.ALPHA, 1f, 0f, CustomTransition.Ease.EASE_OUT)
+        ),
+        outgoing = listOf(
+            CustomTransition.Chip(0f, 1f, CustomTransition.Channel.YAW, 0f, -20f, CustomTransition.Ease.EASE_IN),
+            CustomTransition.Chip(0f, 0.6f, CustomTransition.Channel.ALPHA, 1f, 0f, CustomTransition.Ease.EASE_IN)
+        )
+    )
+
+    val all: List<CustomTransition> =
+        listOf(nod, crossfade, drift, pop, lift, spin, curtain, tilt, flip)
 
     // The preset a spec still is, if it has not been edited away from one.
     fun matching(spec: CustomTransition): CustomTransition? = all.firstOrNull { it == spec }

@@ -21,6 +21,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -48,7 +49,9 @@ import com.supernova.launcher.data.Pref
 import com.supernova.launcher.data.TransitionPresets
 import com.supernova.launcher.ui.settings.preview.MotionPreviewParts
 import com.supernova.launcher.ui.settings.preview.PageEffectPreviewView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // The Labs transition builder: a live preview, a zoomable two-lane timeline
 // and an inspector for the selected chip, in cards. The JSON is still the
@@ -92,6 +95,14 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
     private lateinit var redoButton: MaterialButton
     // Built-in presets, then the user's saved ones.
     private var presetSpecs: List<CustomTransition> = emptyList()
+
+    private val importFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importFrom(uri)
+    }
+    private val exportFile =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            if (uri != null) exportTo(uri)
+        }
 
     private val channels = CustomTransition.Channel.entries
     private val eases = CustomTransition.Ease.entries
@@ -373,6 +384,20 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
         card.addView(
             equalRow(
                 listOf(
+                    button(getString(R.string.custom_transition_import_file), Kind.OUTLINED) {
+                        importFile.launch(
+                            arrayOf("application/json", "text/plain", "application/octet-stream")
+                        )
+                    },
+                    button(getString(R.string.custom_transition_export_file), Kind.OUTLINED) {
+                        exportFile.launch(exportName())
+                    }
+                )
+            )
+        )
+        card.addView(
+            equalRow(
+                listOf(
                     button(getString(R.string.custom_transition_save_preset), Kind.TONAL) { savePreset() },
                     button(getString(R.string.custom_transition_builder_reset), Kind.TEXT) { resetSpec() }
                 )
@@ -629,6 +654,54 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    // A .json file for another phone or a friend: the same document the share
+    // sheet and the paste dialog carry.
+    private fun importFrom(uri: android.net.Uri) {
+        lifecycleScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+            }
+            val parsed = text?.let(CustomTransition::parse)
+            if (parsed == null) {
+                Toast.makeText(
+                    this@CustomTransitionBuilderActivity,
+                    R.string.labs_custom_transition_invalid,
+                    Toast.LENGTH_LONG
+                ).show()
+                return@launch
+            }
+            record()
+            spec = parsed
+            timeline.selected = null
+            refresh(play = true)
+        }
+    }
+
+    private fun exportTo(uri: android.net.Uri) {
+        val payload = CustomTransition.encode(spec)
+        lifecycleScope.launch {
+            val written = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openOutputStream(uri)?.use { it.write(payload.toByteArray()) }
+                }.isSuccess
+            }
+            Toast.makeText(
+                this@CustomTransitionBuilderActivity,
+                if (written) R.string.custom_transition_exported
+                else R.string.labs_custom_transition_invalid,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun exportName(): String {
+        val name = spec.name.trim().ifBlank { "transition" }
+            .replace(Regex("[^A-Za-z0-9 _-]"), "_")
+        return "$name.json"
     }
 
     private fun savePreset() {

@@ -722,6 +722,68 @@ object SettingsCatalogue {
                         )
                     }
                 ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                // The Liquid style's optics: tint, bend, blur, light and what
+                // it bends over.
+                SettingItem.Header(R.string.group_glass),
+                rows.choice(
+                    R.string.glass_tone, com.supernova.launcher.ui.GlassTone.entries,
+                    { it.glassTone }, { EnumLabels.of(it) }
+                ) { viewModel.set(Pref.glassTone, it) }
+                    .hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                rows.choice(
+                    R.string.glass_backdrop, com.supernova.launcher.ui.GlassBackdrop.entries,
+                    { it.glassBackdrop }, { EnumLabels.of(it) }
+                ) { viewModel.set(Pref.glassBackdrop, it) }
+                    .hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_thickness, min = 4, max = 30,
+                    get = { it.glassThickness },
+                    set = { viewModel.set(Pref.glassThickness, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) },
+                    preview = { p, v -> p.copy(glassThickness = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_blur, min = 2, max = 24,
+                    get = { it.glassBlur },
+                    set = { viewModel.set(Pref.glassBlur, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) },
+                    preview = { p, v -> p.copy(glassBlur = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_density, min = 0, max = 100, step = 5,
+                    get = { it.glassDensity },
+                    set = { viewModel.set(Pref.glassDensity, it) },
+                    display = { context.getString(R.string.opacity_percent, it) },
+                    preview = { p, v -> p.copy(glassDensity = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_specular, min = 0, max = 100, step = 5,
+                    get = { it.glassSpecular },
+                    set = { viewModel.set(Pref.glassSpecular, it) },
+                    display = { context.getString(R.string.opacity_percent, it) },
+                    preview = { p, v -> p.copy(glassSpecular = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_fresnel, min = 0, max = 100, step = 5,
+                    get = { it.glassFresnel },
+                    set = { viewModel.set(Pref.glassFresnel, it) },
+                    display = { context.getString(R.string.opacity_percent, it) },
+                    preview = { p, v -> p.copy(glassFresnel = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_dispersion, min = 0, max = 8,
+                    get = { it.glassDispersion },
+                    set = { viewModel.set(Pref.glassDispersion, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) },
+                    preview = { p, v -> p.copy(glassDispersion = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_light, min = 0, max = 360, step = 15,
+                    get = { it.glassLight },
+                    set = { viewModel.set(Pref.glassLight, it) },
+                    display = { context.getString(R.string.glass_degrees_value, it) },
+                    preview = { p, v -> p.copy(glassLight = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
                 SettingItem.Toggle(
                     R.string.dock_bg_behind_nav,
                     get = { it.dockBgBehindNav },
