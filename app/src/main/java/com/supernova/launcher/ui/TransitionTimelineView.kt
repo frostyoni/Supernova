@@ -75,6 +75,8 @@ class TransitionTimelineView(context: Context) : View(context) {
     var onChanged: (() -> Unit)? = null
     var onSelected: (() -> Unit)? = null
     var onZoomChanged: ((Float) -> Unit)? = null
+    // A chip was grabbed: one undo step for the whole drag, not one per frame.
+    var onEditStart: (() -> Unit)? = null
 
     private val density = resources.displayMetrics.density
     private val gutter = 40f * density
@@ -341,6 +343,7 @@ class TransitionTimelineView(context: Context) : View(context) {
                     abs(event.x - bounds.right) <= edgeGrab -> EDGE_END
                     else -> EDGE_BODY
                 }
+                onEditStart?.invoke()
                 selected = Selection(incoming, index)
                 drag = Drag(incoming, index, edge, xTime(event.x), chip)
                 parent?.requestDisallowInterceptTouchEvent(true)

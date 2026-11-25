@@ -82,6 +82,19 @@ class CustomTransitionTest {
     }
 
     @Test
+    fun presetsRoundTripAsOneList() {
+        val list = listOf(TransitionPresets.nod, TransitionPresets.pop, TransitionPresets.spin)
+        assertEquals(list, CustomTransition.parseList(CustomTransition.encodeList(list)))
+    }
+
+    @Test
+    fun aBadPresetIsDroppedRatherThanTheList() {
+        val good = CustomTransition.encode(TransitionPresets.pop)
+        val bad = """{"version":1,"name":"Bad","incoming":[{"at":0.5,"to":0.5,"channel":"ALPHA","from":1,"value":0}]}"""
+        assertEquals(listOf(TransitionPresets.pop), CustomTransition.parseList("[$good,$bad]"))
+    }
+
+    @Test
     fun invalidSpecsAreRejected() {
         assertNull(CustomTransition.parse("{"))
         assertNull(

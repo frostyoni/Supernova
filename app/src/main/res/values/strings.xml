@@ -820,6 +820,12 @@
     <string name="custom_transition_builder_load">Load</string>
     <string name="custom_transition_builder_saved">Saved; it applies when the launcher is back</string>
     <string name="custom_transition_builder_no_chip">No chip selected</string>
+    <string name="custom_transition_undo">Undo</string>
+    <string name="custom_transition_redo">Redo</string>
+    <string name="custom_transition_save_preset">Save preset</string>
+    <string name="custom_transition_preset_saved">Preset saved</string>
+    <string name="custom_transition_delete_preset_title">Delete preset</string>
+    <string name="custom_transition_delete_preset_body">Delete \"%1$s\" from your presets?</string>
     <string name="custom_transition_builder_chip">Chip</string>
     <string name="custom_transition_section_preview">Preview</string>
     <string name="custom_transition_section_timeline">Timeline</string>

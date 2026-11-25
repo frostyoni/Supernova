@@ -1015,6 +1015,7 @@ class LauncherRepository(private val context: Context) {
             model = model,
             prefs = prefs,
             customTransition = CustomTransitionStore.raw(context) ?: "",
+            customTransitionPresets = CustomTransitionStore.presetsRaw(context) ?: "",
             // The font's bytes, so a backup restores the labels it showed
             // rather than whatever this install happens to have.
             customFontBase64 = withContext(Dispatchers.IO) { LabelFontStore.exportBase64(context) }
@@ -1165,6 +1166,10 @@ class LauncherRepository(private val context: Context) {
             payload.customTransition?.let { spec ->
                 if (spec.isBlank()) CustomTransitionStore.clear(context)
                 else CustomTransitionStore.save(context, spec)
+            }
+            payload.customTransitionPresets?.let { presets ->
+                if (presets.isBlank()) CustomTransitionStore.clearPresets(context)
+                else CustomTransitionStore.restorePresets(context, presets)
             }
         }
 

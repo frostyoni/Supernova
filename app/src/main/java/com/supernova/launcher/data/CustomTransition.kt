@@ -1,6 +1,7 @@
 package com.supernova.launcher.data
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 // A page transition a person writes, not one of the fixed effects: a little
@@ -88,6 +89,7 @@ data class CustomTransition(
 
     companion object {
         const val MAX_CHIPS = 64
+        const val MAX_PRESETS = 24
 
         // Pretty, so a shared spec is readable in a chat or an issue.
         private val json = Json {
@@ -100,6 +102,17 @@ data class CustomTransition(
             runCatching { json.decodeFromString<CustomTransition>(text).validated() }.getOrNull()
 
         fun encode(transition: CustomTransition): String = json.encodeToString(transition)
+
+        // The user's saved presets, as one JSON array. A bad entry is dropped
+        // rather than failing the whole list.
+        private val listSerializer = ListSerializer(CustomTransition.serializer())
+        fun encodeList(transitions: List<CustomTransition>): String =
+            json.encodeToString(listSerializer, transitions)
+        fun parseList(text: String): List<CustomTransition> =
+            runCatching { json.decodeFromString(listSerializer, text) }
+                .getOrDefault(emptyList())
+                .mapNotNull { it.validated() }
+                .take(MAX_PRESETS)
 
         // Slide, roll, a small jump and a fade: the example a new spec starts
         // from, and the one the Labs dialog offers when nothing is saved.

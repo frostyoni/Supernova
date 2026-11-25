@@ -84,6 +84,15 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
     private var spec: CustomTransition = CustomTransition()
     private var populating = false
 
+    private val undoStack = ArrayDeque<CustomTransition>()
+    private val redoStack = ArrayDeque<CustomTransition>()
+    private var lastRecordKey: String? = null
+    private var lastRecordAt = 0L
+    private lateinit var undoButton: MaterialButton
+    private lateinit var redoButton: MaterialButton
+    // Built-in presets, then the user's saved ones.
+    private var presetSpecs: List<CustomTransition> = emptyList()
+
     private val channels = CustomTransition.Channel.entries
     private val eases = CustomTransition.Ease.entries
 
@@ -145,6 +154,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
         }
         timeline.onSelected = { populate() }
         timeline.onZoomChanged = { showZoom(it) }
+        timeline.onEditStart = { record() }
         timelineScroll.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
             val width = right - left
             if (width > 0 && timeline.baseWidthPx != width) timeline.baseWidthPx = width
@@ -183,6 +193,14 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
+        undoButton = smallButton("↶", getString(R.string.custom_transition_undo)) { undo() }.apply {
+            isEnabled = false
+        }
+        redoButton = smallButton("↷", getString(R.string.custom_transition_redo)) { redo() }.apply {
+            isEnabled = false
+        }
+        bar.addView(undoButton)
+        bar.addView(redoButton)
         bar.addView(button(getString(R.string.save), Kind.FILLED) { save() })
         return bar
     }
@@ -227,28 +245,12 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             isSingleLine = true
             setChipSpacing(dp(8))
         }
-        TransitionPresets.all.forEach { preset ->
-            val chip = Chip(this).apply {
-                id = View.generateViewId()
-                text = preset.name
-                isCheckable = true
-                isCheckedIconVisible = true
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                setTextColor(ink)
-                chipCornerRadius = dp(18).toFloat()
-                chipBackgroundColor = ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                    intArrayOf(ColorUtils.setAlphaComponent(accent, 46), pill)
-                )
-                setOnClickListener { loadPreset(preset) }
-            }
-            presets.addView(chip)
-        }
         val scroller = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(presets, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         card.addView(scroller)
+        rebuildPresets()
         return card
     }
 
@@ -354,6 +356,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
         nameField.edit.inputType = InputType.TYPE_CLASS_TEXT
         nameField.edit.doAfterTextChanged {
             if (!populating) {
+                record("name")
                 spec = spec.copy(name = it?.toString()?.trim().orEmpty())
                 presets.clearCheck()
             }
@@ -363,7 +366,14 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
             equalRow(
                 listOf(
                     button(getString(R.string.custom_transition_builder_import), Kind.OUTLINED) { importDialog() },
-                    button(getString(R.string.labs_custom_transition_share), Kind.OUTLINED) { share() },
+                    button(getString(R.string.labs_custom_transition_share), Kind.OUTLINED) { share() }
+                )
+            )
+        )
+        card.addView(
+            equalRow(
+                listOf(
+                    button(getString(R.string.custom_transition_save_preset), Kind.TONAL) { savePreset() },
                     button(getString(R.string.custom_transition_builder_reset), Kind.TEXT) { resetSpec() }
                 )
             )
@@ -532,6 +542,106 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
 
     // --- state -------------------------------------------------------------
 
+    // One snapshot per gesture or coalesced run of typing, so undo steps are
+    // what a person did rather than every frame or keystroke.
+    private fun record(key: String? = null) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (key != null && key == lastRecordKey && now - lastRecordAt < RECORD_COALESCE_MS) {
+            lastRecordAt = now
+            return
+        }
+        undoStack.addLast(spec)
+        while (undoStack.size > HISTORY_LIMIT) undoStack.removeFirst()
+        redoStack.clear()
+        lastRecordKey = key
+        lastRecordAt = now
+        updateHistoryButtons()
+    }
+
+    private fun updateHistoryButtons() {
+        if (::undoButton.isInitialized) undoButton.isEnabled = undoStack.isNotEmpty()
+        if (::redoButton.isInitialized) redoButton.isEnabled = redoStack.isNotEmpty()
+    }
+
+    private fun undo() {
+        val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(spec)
+        spec = previous
+        lastRecordKey = null
+        timeline.selected = null
+        refresh(play = false)
+        updateHistoryButtons()
+    }
+
+    private fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(spec)
+        spec = next
+        lastRecordKey = null
+        timeline.selected = null
+        refresh(play = false)
+        updateHistoryButtons()
+    }
+
+    private fun rebuildPresets() {
+        val builtIn = TransitionPresets.all
+        presetSpecs = builtIn + CustomTransitionStore.presets(this)
+        presets.removeAllViews()
+        presetSpecs.forEachIndexed { index, preset ->
+            val user = index >= builtIn.size
+            val chip = Chip(this).apply {
+                id = View.generateViewId()
+                text = preset.name
+                isCheckable = true
+                isCheckedIconVisible = true
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextColor(ink)
+                chipCornerRadius = dp(18).toFloat()
+                chipBackgroundColor = ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(
+                        if (user) ColorUtils.setAlphaComponent(ink, 40)
+                        else ColorUtils.setAlphaComponent(accent, 46),
+                        pill
+                    )
+                )
+                setOnClickListener { loadPreset(preset) }
+                if (user) {
+                    // Long-press throws a saved preset away; a built-in stays.
+                    setOnLongClickListener {
+                        confirmDeletePreset(preset)
+                        true
+                    }
+                }
+            }
+            presets.addView(chip)
+        }
+        syncPresets()
+    }
+
+    private fun confirmDeletePreset(preset: CustomTransition) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.custom_transition_delete_preset_title)
+            .setMessage(getString(R.string.custom_transition_delete_preset_body, preset.name))
+            .setPositiveButton(R.string.custom_transition_builder_delete) { _, _ ->
+                CustomTransitionStore.deletePreset(this, preset.name)
+                rebuildPresets()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun savePreset() {
+        val named = if (spec.name.isBlank()) spec.copy(name = getString(R.string.custom_transition_builder)) else spec
+        if (!CustomTransitionStore.savePreset(this, named)) {
+            Toast.makeText(this, R.string.labs_custom_transition_invalid, Toast.LENGTH_LONG).show()
+            return
+        }
+        spec = named
+        rebuildPresets()
+        Toast.makeText(this, R.string.custom_transition_preset_saved, Toast.LENGTH_SHORT).show()
+    }
+
     private fun refresh(play: Boolean) {
         timeline.transition = spec
         preview.show(ScrollEffect.CUSTOM, spec, replay = play)
@@ -543,10 +653,10 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
     }
 
     private fun syncPresets() {
-        val matching = TransitionPresets.matching(spec)
+        val matching = presetSpecs.firstOrNull { it == spec }
         presets.clearCheck()
         if (matching != null) {
-            val index = TransitionPresets.all.indexOf(matching)
+            val index = presetSpecs.indexOf(matching)
             (presets.getChildAt(index) as? Chip)?.let { presets.check(it.id) }
         }
     }
@@ -608,6 +718,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
 
     private fun updateSelected(change: (CustomTransition.Chip) -> CustomTransition.Chip) {
         val selected = timeline.selected ?: return
+        record("chip:${selected.incoming}:${selected.index}")
         val chips = (if (selected.incoming) spec.incoming else spec.outgoing).toMutableList()
         if (selected.index !in chips.indices) return
         chips[selected.index] = change(chips[selected.index])
@@ -624,12 +735,14 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
     }
 
     private fun loadPreset(preset: CustomTransition) {
+        record()
         spec = preset
         timeline.selected = null
         refresh(play = true)
     }
 
     private fun addChip() {
+        record()
         val incoming = timeline.selected?.incoming ?: true
         val channel = channels.getOrNull(channelDrop.view.listSelection) ?: CustomTransition.Channel.MOVE_X
         // A new chip starts at the playhead and does something sensible for
@@ -651,6 +764,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
 
     private fun duplicate() {
         val selected = timeline.selected ?: return
+        record()
         val chips = (if (selected.incoming) spec.incoming else spec.outgoing).toMutableList()
         val chip = chips.getOrNull(selected.index) ?: return
         chips += ChipEdit.move(chip, chip.at + 0.05f)
@@ -662,6 +776,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
 
     private fun delete() {
         val selected = timeline.selected ?: return
+        record()
         val chips = (if (selected.incoming) spec.incoming else spec.outgoing).toMutableList()
         if (selected.index !in chips.indices) return
         chips.removeAt(selected.index)
@@ -671,6 +786,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
     }
 
     private fun resetSpec() {
+        record()
         spec = CustomTransition(name = getString(R.string.custom_transition_builder))
         timeline.selected = null
         refresh(play = true)
@@ -698,6 +814,7 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
                 if (parsed == null) {
                     Toast.makeText(this, R.string.labs_custom_transition_invalid, Toast.LENGTH_LONG).show()
                 } else {
+                    record()
                     spec = parsed
                     timeline.selected = null
                     refresh(play = true)
@@ -750,6 +867,9 @@ class CustomTransitionBuilderActivity : AppCompatActivity() {
     private fun density(): Float = resources.displayMetrics.density
 
     private companion object {
+        const val HISTORY_LIMIT = 60
+        const val RECORD_COALESCE_MS = 900L
+
         val ICON_COLOURS = intArrayOf(
             0xFF3F72AF.toInt(), 0xFF2E7D5B.toInt(), 0xFFA34E44.toInt(),
             0xFF7B4FA0.toInt(), 0xFFB8860B.toInt(), 0xFF4A6FA5.toInt()

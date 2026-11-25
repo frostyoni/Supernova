@@ -9,11 +9,12 @@ class BackupPayloadTest {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private fun payload(spec: String?) = BackupPayload(
+    private fun payload(spec: String?, presets: String? = null) = BackupPayload(
         exportedAtEpochMs = 1L,
         model = LauncherModel(),
         prefs = LauncherPrefs(),
-        customTransition = spec
+        customTransition = spec,
+        customTransitionPresets = presets
     )
 
     @Test
@@ -31,6 +32,21 @@ class BackupPayloadTest {
             """{"exportedAtEpochMs":1,"model":{},"prefs":{}}"""
         )
         assertNull(decoded.customTransition)
+    }
+
+    @Test
+    fun theSavedPresetsComeBackToo() {
+        val presets = CustomTransition.encodeList(listOf(TransitionPresets.pop, TransitionPresets.spin))
+        val decoded = json.decodeFromString<BackupPayload>(json.encodeToString(payload("", presets)))
+        assertEquals(presets, decoded.customTransitionPresets)
+    }
+
+    @Test
+    fun anOlderBackupLeavesThePresetsAlone() {
+        val decoded = json.decodeFromString<BackupPayload>(
+            """{"exportedAtEpochMs":1,"model":{},"prefs":{}}"""
+        )
+        assertNull(decoded.customTransitionPresets)
     }
 
     @Test

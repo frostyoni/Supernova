@@ -122,7 +122,8 @@ edges known · **dropped** = considered and deliberately not done.
 
 - **Backups are a known state** — *stable*. The Labs custom transition and the
   custom font ride in the payload (blank means none and clears; absent means the
-  backup predates the field and leaves the current one alone). Export and
+  backup predates the field and leaves the current one alone; the user's saved
+  transition presets ride in the payload the same way). Export and
   serialization move off the main thread; automatic snapshots are written aside
   and renamed when whole; the pre-import snapshot is taken under the lock.
 - **Page drag ends with the launcher** — *stable*. Stopping cancels the page drag
@@ -147,8 +148,8 @@ edges known · **dropped** = considered and deliberately not done.
 - Widget stacks: removing an app's last widget removes the whole stack; cards and
   drag-to-stack are not in; the Manage sheet uses arrows, not drag.
 - Liquid glass: an approximation on Android 13+ (no wallpaper pixels), dock only.
-- Custom transitions: no builder undo; the preview uses coloured tiles rather than
-  real icons.
+- Custom transitions: the builder's timeline is not zoomable per lane; there is no
+  cross-lane drag (move a chip by retyping its lane's chip list).
 - Reachability moves the workspace pager only; the page indicator stays.
 - Folder badges are upstream (Badges → Folder badges), not a fork addition.
 - Wallpaper-adaptive theming is upstream (`PaletteSource.WALLPAPER`), not a fork

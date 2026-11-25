@@ -736,7 +736,10 @@ data class BackupPayload(
     // The custom label font's file, base64: null in an export taken before
     // it existed and in one taken with no font stored. A restore leaves the
     // installed font alone for null and removes it for a blank string.
-    val customFontBase64: String? = null
+    val customFontBase64: String? = null,
+    // The Labs saved transition presets, as one JSON array; null in a backup
+    // written before them, blank when there were none.
+    val customTransitionPresets: String? = null
 )
 
 // Serializable for AppListCache, the drawer's list kept between runs.
