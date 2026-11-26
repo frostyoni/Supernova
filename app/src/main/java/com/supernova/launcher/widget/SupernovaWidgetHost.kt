@@ -8,6 +8,7 @@ import android.graphics.Outline
 import android.text.TextUtils
 import android.view.MotionEvent
 import android.view.View
+import android.widget.RemoteViews
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -102,6 +103,27 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
             applyCornerClip()
         }
 
+    private var pendingViews: RemoteViews? = null
+
+    var updatesPaused: Boolean = false
+        set(paused) {
+            if (field == paused) return
+            field = paused
+            if (!paused) {
+                val views = pendingViews
+                pendingViews = null
+                if (views != null) updateAppWidget(views)
+            }
+        }
+
+    override fun updateAppWidget(views: RemoteViews?) {
+        if (updatesPaused) {
+            pendingViews = views
+            return
+        }
+        super.updateAppWidget(views)
+    }
+
     private val outline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
             outline.setRoundRect(0, 0, view.width, view.height, cornerRadiusPx)
@@ -154,7 +176,7 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 longPressFired = false
-                contentOwnsTouch = hasScrollableContent()
+                contentOwnsTouch = scrollsVertically(this)
                 downX = ev.x
                 downY = ev.y
                 postDelayed(longPressCheck, ViewConfiguration.getLongPressTimeout().toLong())
@@ -203,10 +225,6 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
         super.requestDisallowInterceptTouchEvent(disallowIntercept)
     }
 
-    // Scrollable content announces itself up front, before the finger has
-    // moved far enough for anything to claim the stream.
-    fun hasScrollableContent(): Boolean = scrollsVertically(this)
-
     // The workspace pager calls this on children when it takes over the
     // gesture for a page swipe.
     override fun cancelLongPress() {
@@ -222,6 +240,8 @@ private fun scrollsVertically(view: View): Boolean =
             val child = view.getChildAt(i)
             child.visibility == View.VISIBLE && scrollsVertically(child)
         }
+
+fun SupernovaWidgetHostView.hasScrollableContent(): Boolean = scrollsVertically(this)
 
 // Keeps the marquees of a widget's focus-taking TextViews running by
 // selecting them.

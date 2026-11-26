@@ -409,8 +409,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
 
     private fun stackSignature(item: LauncherItem): String {
         if (item.itemType != ItemType.WIDGET || item.widgetStack.isEmpty()) return ""
-        return "|${item.widgetStackFront}|" +
-            item.widgetStack.joinToString(",") { "${it.appWidgetId}:${it.provider}:${it.userSerial}" }
+        return "|" + item.widgetStack.joinToString(",") { "${it.appWidgetId}:${it.provider}:${it.userSerial}" }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {

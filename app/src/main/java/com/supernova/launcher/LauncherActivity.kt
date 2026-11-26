@@ -6200,6 +6200,11 @@ class LauncherActivity :
 
     // ---- WidgetController.Host
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::widgets.isInitialized) widgets.trimMemory(level)
+    }
+
     override val activeResizeFrame: WidgetResizeFrame?
         get() = widgets.activeResizeFrame
 

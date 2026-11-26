@@ -16,11 +16,12 @@ import com.supernova.launcher.data.LauncherItem
 import com.supernova.launcher.data.WidgetStacks
 import kotlin.math.abs
 
-// A workspace widget stack: one cell that hosts two app widgets, with a
+// A workspace widget stack: one cell that hosts app widgets, with a
 // horizontal swipe switching the visible one. The primary widget (item's
-// appWidgetId) is first; widgetStack members follow in order. Only one
-// child is visible at a time, but every child is measured and laid out at
-// the container's size so the provider sees the same bounds.
+// appWidgetId) is first; widgetStack members follow in order. Only the
+// active member and its neighbours are inflated; hidden members are measured
+// and laid out at the container's size once attached so providers see stable
+// bounds.
 class WidgetStackView(
     context: Context,
     private val controller: WidgetController,
@@ -30,7 +31,7 @@ class WidgetStackView(
 
     private data class StackChild(
         val widgetId: Int,
-        val hostView: AppWidgetHostView
+        var hostView: AppWidgetHostView? = null
     )
 
     private val children = mutableListOf<StackChild>()
@@ -98,38 +99,26 @@ class WidgetStackView(
         val desiredIds = buildList {
             item.appWidgetId?.let { add(it) }
             item.widgetStack.mapNotNullTo(this) { it.appWidgetId }
-        }.distinct()
+        }.distinct().filter(controller::hasWidgetProvider)
 
         val iter = children.iterator()
         while (iter.hasNext()) {
             val child = iter.next()
             if (child.widgetId !in desiredIds) {
-                child.hostView.animate().cancel()
-                child.hostView.alpha = 1f
-                child.hostView.translationX = 0f
-                removeView(child.hostView)
+                child.hostView?.let { hostView ->
+                    hostView.animate().cancel()
+                    hostView.alpha = 1f
+                    hostView.translationX = 0f
+                    (hostView as? com.supernova.launcher.widget.SupernovaWidgetHostView)?.updatesPaused = false
+                    removeView(hostView)
+                }
                 iter.remove()
             }
         }
 
-        val reordered = mutableListOf<StackChild>()
-        desiredIds.forEachIndexed { index, widgetId ->
-            val existing = children.find { it.widgetId == widgetId }
-            val hostView = if (existing != null) {
-                existing.hostView
-            } else {
-                controller.stackMemberHostView(widgetId)?.also { hostView ->
-                    hostView.setOnLongClickListener {
-                        onLongPress(this@WidgetStackView, item)
-                        true
-                    }
-                    (hostView.parent as? ViewGroup)?.removeView(hostView)
-                    addView(hostView, index, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-                }
-            }
-            if (hostView != null) {
-                reordered += StackChild(widgetId, hostView)
-            }
+        val previousChildren = children.associateBy { it.widgetId }
+        val reordered = desiredIds.map { widgetId ->
+            StackChild(widgetId, previousChildren[widgetId]?.hostView)
         }
         children.clear()
         children.addAll(reordered)
@@ -142,17 +131,49 @@ class WidgetStackView(
     fun reportMemberSizes() {
         if (width <= 0 || height <= 0) return
         children.forEach { child ->
-            controller.reportStackMemberSize(child.widgetId, child.hostView, width, height)
+            child.hostView?.let { hostView ->
+                controller.reportStackMemberSize(child.widgetId, hostView, width, height)
+            }
         }
     }
 
     private fun applyVisibility(force: Boolean = false) {
         if (switching && !force) return
+        if (children.isNotEmpty()) {
+            ensureMemberHostView(frontIndex)
+            if (children.size > 1) {
+                ensureMemberHostView((frontIndex + 1) % children.size)
+                ensureMemberHostView((frontIndex - 1 + children.size) % children.size)
+            }
+        }
         children.forEachIndexed { index, child ->
-            child.hostView.animate().cancel()
-            child.hostView.alpha = 1f
-            child.hostView.translationX = 0f
-            child.hostView.visibility = if (index == frontIndex) View.VISIBLE else View.INVISIBLE
+            val hostView = child.hostView ?: return@forEachIndexed
+            hostView.animate().cancel()
+            hostView.alpha = 1f
+            hostView.translationX = 0f
+            val visible = index == frontIndex
+            hostView.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+            (hostView as? com.supernova.launcher.widget.SupernovaWidgetHostView)?.updatesPaused = !visible
+        }
+    }
+
+    private fun ensureMemberHostView(index: Int): AppWidgetHostView? {
+        val child = children.getOrNull(index) ?: return null
+        val existing = child.hostView
+        return existing ?: controller.stackMemberHostView(child.widgetId)?.also { hostView ->
+            hostView.setOnLongClickListener {
+                onLongPress(this@WidgetStackView, item)
+                true
+            }
+            (hostView.parent as? ViewGroup)?.removeView(hostView)
+            hostView.alpha = 1f
+            hostView.translationX = 0f
+            val layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            addView(hostView, layoutParams)
+            child.hostView = hostView
         }
     }
 
@@ -169,10 +190,10 @@ class WidgetStackView(
     private fun switchTo(newFront: Int) {
         if (newFront == frontIndex || newFront !in children.indices) return
         val oldChild = children.getOrNull(frontIndex)?.hostView
-        val newChild = children.getOrNull(newFront)?.hostView
         val forward = newFront > frontIndex || (frontIndex == children.size - 1 && newFront == 0)
         val travel = width * SLIDE_FRACTION * (if (forward) -1f else 1f)
         frontIndex = newFront
+        val newChild = ensureMemberHostView(newFront)
 
         oldChild?.animate()?.cancel()
         newChild?.animate()?.cancel()
@@ -186,7 +207,9 @@ class WidgetStackView(
         val modelOrder = WidgetStacks.order(item)
         val activeWidgetId = children.getOrNull(frontIndex)?.widgetId
         val modelIndex = modelOrder.indexOfFirst { it.appWidgetId == activeWidgetId }
-        controller.onStackFrontChanged(item.id, if (modelIndex >= 0) modelIndex else frontIndex)
+        val persistedIndex = if (modelIndex >= 0) modelIndex else frontIndex
+        item = item.copy(widgetStackFront = persistedIndex)
+        controller.onStackFrontChanged(item.id, persistedIndex)
 
         val duration = controller.animationDuration(SWITCH_ANIMATION_MS)
         val generation = ++switchGeneration
@@ -213,7 +236,7 @@ class WidgetStackView(
         val interpolator = android.view.animation.DecelerateInterpolator()
         var pendingAnimations = 0
         if (oldChild != null) pendingAnimations++
-        pendingAnimations++
+        if (newChild != null) pendingAnimations++
 
         oldChild?.let { old ->
             old.animate()
@@ -396,13 +419,30 @@ class WidgetStackView(
         if (changed) applyVisibility()
     }
 
+    fun trimInactiveMembers() {
+        children.forEachIndexed { index, child ->
+            if (index == frontIndex) return@forEachIndexed
+            child.hostView?.let { hostView ->
+                hostView.animate().cancel()
+                hostView.alpha = 1f
+                hostView.translationX = 0f
+                (hostView as? com.supernova.launcher.widget.SupernovaWidgetHostView)?.updatesPaused = false
+                removeView(hostView)
+            }
+            child.hostView = null
+        }
+    }
+
     fun clearStack() {
         switchGeneration++
         switching = false
-        children.forEach {
-            it.hostView.animate().cancel()
-            it.hostView.alpha = 1f
-            it.hostView.translationX = 0f
+        children.forEach { child ->
+            child.hostView?.let { hostView ->
+                hostView.animate().cancel()
+                hostView.alpha = 1f
+                hostView.translationX = 0f
+                (hostView as? com.supernova.launcher.widget.SupernovaWidgetHostView)?.updatesPaused = false
+            }
         }
         children.clear()
         removeAllViews()

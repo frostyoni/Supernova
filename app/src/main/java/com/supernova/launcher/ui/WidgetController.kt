@@ -39,6 +39,7 @@ import com.supernova.launcher.databinding.ActivityLauncherBinding
 import com.supernova.launcher.runLogged
 import com.supernova.launcher.widget.SupernovaWidgetHost
 import com.supernova.launcher.widget.SupernovaWidgetHostView
+import com.supernova.launcher.widget.hasScrollableContent
 import com.supernova.launcher.widget.WidgetFeatures
 import com.supernova.launcher.widget.WidgetResizeFrame
 import com.supernova.launcher.widget.WidgetSizing
@@ -672,6 +673,9 @@ class WidgetController(
         }
     }
 
+    fun hasWidgetProvider(widgetId: Int): Boolean =
+        runCatching { appWidgetManager.getAppWidgetInfo(widgetId) != null }.getOrDefault(false)
+
     // Persist a stack front change. The container already switched visually.
     fun onStackFrontChanged(itemId: String, frontIndex: Int) {
         viewModel.setWidgetStackFront(itemId, frontIndex)
@@ -682,6 +686,14 @@ class WidgetController(
     fun activeWidgetMember(item: LauncherItem): WidgetStackMember? = WidgetStacks.activeMember(item)
 
     fun canAddToStack(item: LauncherItem): Boolean = WidgetStacks.canAdd(item)
+
+    fun trimMemory(level: Int) {
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) return
+        lastReportedSizes.clear()
+        stackContainers.values.forEach(WidgetStackView::trimInactiveMembers)
+        widgetHostViews.clear()
+        popupHostViews.clear()
+    }
 
     // Long-press menu row: pick a widget to add to an existing stack.
     fun showPickerForStack(item: LauncherItem) {

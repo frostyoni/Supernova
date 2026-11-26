@@ -105,8 +105,10 @@ edges known · **dropped** = considered and deliberately not done.
   them. The front is kept on its own widget across reorder/remove, unbound
   restores and missing providers; duplicate widget ids are rejected; app
   info/settings and export label target the visible member; adding stops at the
-  total 12-member bound; cached host views and stack containers are reused and
-  released.
+  total 12-member bound; cached host views and stack containers are reused;
+  only the active member and its neighbours are inflated; hidden members pause
+  RemoteViews updates, latest updates are coalesced, and memory pressure trims
+  inactive hosts.
 - **Pop-up widget** — *stable*. A home icon can carry a widget it peeks at on a
   swipe: a card opens at the icon — above it, below when there is no room above,
   beside it in landscape — holding the widget itself, so its taps and scrolling
