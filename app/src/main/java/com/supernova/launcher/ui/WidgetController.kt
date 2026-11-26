@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.SystemClock
@@ -19,7 +20,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.SeekBar
+import com.google.android.material.slider.Slider
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -570,16 +571,21 @@ class WidgetController(
             content, R.string.widget_border_width,
             LauncherRepository.MAX_WIDGET_BORDER_DP, state.borderWidth
         ) { state.borderWidth = it }
-        appearanceColorRow(content, R.string.widget_border_color, state.borderColor, Color.WHITE) {
-            state.borderColor = it
-        }
         appearanceSlider(
             content, R.string.widget_shadow,
             LauncherRepository.MAX_WIDGET_SHADOW_DP, state.shadow
         ) { state.shadow = it }
-        appearanceColorRow(content, R.string.widget_shadow_color, state.shadowColor, Color.BLACK) {
+        val colors = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        appearanceColorChip(colors, R.string.widget_border_color, state.borderColor, Color.WHITE) {
+            state.borderColor = it
+        }
+        appearanceColorChip(colors, R.string.widget_shadow_color, state.shadowColor, Color.BLACK) {
             state.shadowColor = it
         }
+        content.addView(colors)
         return content
     }
 
@@ -617,84 +623,121 @@ class WidgetController(
             textSize = APPEARANCE_TEXT_SP
             typeface = Typeface.DEFAULT_BOLD
         }
-        val current = TextView(activity).apply { text = value.toString() }
+        val current = TextView(activity).apply {
+            text = value.toString()
+            textSize = APPEARANCE_VALUE_TEXT_SP
+            setPadding(
+                activity.dp(APPEARANCE_VALUE_PAD_H), activity.dp(APPEARANCE_VALUE_PAD_V),
+                activity.dp(APPEARANCE_VALUE_PAD_H), activity.dp(APPEARANCE_VALUE_PAD_V)
+            )
+            background = GradientDrawable().apply {
+                cornerRadius = activity.dp(APPEARANCE_VALUE_RADIUS).toFloat()
+                setColor(APPEARANCE_VALUE_BG)
+            }
+        }
         header.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT))
         header.addView(current)
-        val seek = SeekBar(activity).apply {
-            this.max = max
-            progress = value.coerceIn(0, max)
-            minimumHeight = activity.dp(APPEARANCE_SEEK_HEIGHT)
-            setPadding(
-                0, activity.dp(APPEARANCE_SEEK_PAD),
-                0, activity.dp(APPEARANCE_SEEK_PAD)
+        val slider = Slider(activity).apply {
+            valueFrom = 0f
+            valueTo = max.toFloat()
+            stepSize = 1f
+            this.value = value.coerceIn(0, max).toFloat()
+            trackHeight = activity.dp(APPEARANCE_TRACK_HEIGHT)
+            thumbRadius = activity.dp(APPEARANCE_THUMB_RADIUS)
+            haloRadius = activity.dp(APPEARANCE_HALO_RADIUS)
+            setPaddingRelative(
+                activity.dp(APPEARANCE_SLIDER_PAD), 0, activity.dp(APPEARANCE_SLIDER_PAD), 0
             )
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
-                    current.text = progress.toString()
-                    onChange(progress)
-                }
-
-                override fun onStartTrackingTouch(bar: SeekBar) = Unit
-                override fun onStopTrackingTouch(bar: SeekBar) = Unit
-            })
+            addOnChangeListener { _, progress, _ ->
+                current.text = progress.toInt().toString()
+                onChange(progress.toInt())
+            }
         }
         parent.addView(header)
         parent.addView(
-            seek,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                activity.dp(APPEARANCE_SEEK_HEIGHT)
-            )
+            slider,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
     }
 
-    private fun appearanceColorRow(
+    private fun renderColorChip(dot: View, label: TextView, color: String, default: Int) {
+        dot.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(LabelStyler.parseColor(color, default))
+            setStroke(activity.dp(APPEARANCE_DOT_STROKE), COLOR_DOT_STROKE)
+        }
+        label.text = SettingsCatalogue.colorLabel(activity, color, default)
+    }
+
+    private fun showColorPicker(title: Int, current: String, default: Int, onPicked: (String) -> Unit) {
+        val prefs = viewModel.state.value.prefs
+        val palette = PaletteFactory.resolve(
+            activity, prefs.paletteSource, prefs.paletteSeed,
+            ThemeEngine.accentColor(activity, prefs.accentColor)
+        )
+        ColorSheet(activity, palette, default).show(title, current, onPicked)
+    }
+
+    private fun appearanceColorChip(
         parent: LinearLayout,
         title: Int,
         value: String,
         default: Int,
         onPicked: (String) -> Unit
     ) {
-        val row = LinearLayout(activity).apply {
+        val chip = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            isClickable = true
+            setPadding(
+                activity.dp(APPEARANCE_CHIP_PAD_H), activity.dp(APPEARANCE_CHIP_PAD_V),
+                activity.dp(APPEARANCE_CHIP_PAD_H), activity.dp(APPEARANCE_CHIP_PAD_V)
+            )
+            background = GradientDrawable().apply {
+                cornerRadius = activity.dp(APPEARANCE_CHIP_RADIUS).toFloat()
+                setColor(APPEARANCE_CHIP_BG)
+                setStroke(activity.dp(APPEARANCE_DOT_STROKE), APPEARANCE_CHIP_STROKE)
+            }
+        }
+        val titleView = TextView(activity).apply {
+            text = activity.getString(title)
+            textSize = APPEARANCE_CHIP_TITLE_SP
+            setTextColor(APPEARANCE_CHIP_TITLE_COLOR)
+        }
+        val line = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, activity.dp(APPEARANCE_ROW_PAD), 0, activity.dp(APPEARANCE_ROW_PAD))
-            isClickable = true
         }
         val dot = View(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 activity.dp(APPEARANCE_DOT), activity.dp(APPEARANCE_DOT)
             )
         }
-        val label = TextView(activity).apply { textSize = APPEARANCE_TEXT_SP }
-        fun render(color: String) {
-            dot.background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(LabelStyler.parseColor(color, default))
-                setStroke(activity.dp(APPEARANCE_DOT_STROKE), COLOR_DOT_STROKE)
-            }
-            label.text = SettingsCatalogue.colorLabel(activity, color, default)
+        val label = TextView(activity).apply {
+            textSize = APPEARANCE_CHIP_VALUE_SP
+            maxLines = 1
         }
-        render(value)
-        row.addView(dot)
-        row.addView(
+        line.addView(dot)
+        line.addView(
             label,
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT).apply {
                 marginStart = activity.dp(APPEARANCE_GAP)
             }
         )
-        row.setOnClickListener {
-            val prefs = viewModel.state.value.prefs
-            val palette = PaletteFactory.resolve(
-                activity, prefs.paletteSource, prefs.paletteSeed,
-                ThemeEngine.accentColor(activity, prefs.accentColor)
-            )
-            ColorSheet(activity, palette, default).show(title, value) { picked ->
+        renderColorChip(dot, label, value, default)
+        chip.addView(titleView)
+        chip.addView(line)
+        chip.setOnClickListener {
+            showColorPicker(title, value, default) { picked ->
                 onPicked(picked)
-                render(picked)
+                renderColorChip(dot, label, picked, default)
             }
         }
-        parent.addView(row)
+        parent.addView(
+            chip,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT).apply {
+                marginEnd = activity.dp(APPEARANCE_CHIP_GAP)
+            }
+        )
     }
 
     // Overlays a draggable resize frame on top of the widget's host view; the
@@ -1415,16 +1458,31 @@ class WidgetController(
         private const val FALLBACK_PADDING_DP = 8
         private const val COLOR_DOT_STROKE = 0x33FFFFFF
         private const val APPEARANCE_SIDE_PAD = 24
-        private const val APPEARANCE_TOP_PAD = 8
-        private const val APPEARANCE_ROW_TOP = 10
-        private const val APPEARANCE_ROW_PAD = 12
-        private const val APPEARANCE_SEEK_HEIGHT = 48
-        private const val APPEARANCE_SEEK_PAD = 8
-        private const val APPEARANCE_TEXT_SP = 16f
+        private const val APPEARANCE_TOP_PAD = 4
+        private const val APPEARANCE_ROW_TOP = 8
+        private const val APPEARANCE_TEXT_SP = 15f
+        private const val APPEARANCE_VALUE_TEXT_SP = 13f
         private const val APPEARANCE_WEIGHT = 1f
-        private const val APPEARANCE_DOT = 24
+        private const val APPEARANCE_TRACK_HEIGHT = 4
+        private const val APPEARANCE_THUMB_RADIUS = 9
+        private const val APPEARANCE_HALO_RADIUS = 20
+        private const val APPEARANCE_SLIDER_PAD = 8
+        private const val APPEARANCE_VALUE_PAD_H = 10
+        private const val APPEARANCE_VALUE_PAD_V = 4
+        private const val APPEARANCE_VALUE_RADIUS = 12
+        private const val APPEARANCE_VALUE_BG = 0x22FFFFFF
+        private const val APPEARANCE_CHIP_PAD_H = 12
+        private const val APPEARANCE_CHIP_PAD_V = 8
+        private const val APPEARANCE_CHIP_RADIUS = 14
+        private const val APPEARANCE_CHIP_BG = 0x14FFFFFF
+        private const val APPEARANCE_CHIP_STROKE = 0x1FFFFFFF
+        private const val APPEARANCE_CHIP_TITLE_SP = 12f
+        private const val APPEARANCE_CHIP_TITLE_COLOR = 0xB3FFFFFF.toInt()
+        private const val APPEARANCE_CHIP_VALUE_SP = 14f
+        private const val APPEARANCE_CHIP_GAP = 8
+        private const val APPEARANCE_DOT = 18
         private const val APPEARANCE_DOT_STROKE = 1
-        private const val APPEARANCE_GAP = 16
+        private const val APPEARANCE_GAP = 8
         private const val HALF = 2
 
         // One thread for every host view's inflation, shared by the activity
