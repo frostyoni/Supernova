@@ -18,8 +18,8 @@ import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.View
 import androidx.core.graphics.ColorUtils
 import com.supernova.launcher.R
@@ -33,6 +33,7 @@ import com.supernova.launcher.data.VitalsState
 import com.supernova.launcher.ui.Animations
 import com.supernova.launcher.ui.theme.Styles
 import com.supernova.launcher.ui.theme.SurfaceId
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -48,6 +49,17 @@ class DeviceStatusView(
     private val history = VitalsHistory(HISTORY_SIZE)
     private val store = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
     private val handler = Handler(Looper.getMainLooper())
+    private var touchSlop = 0
+    private var downX = 0f
+    private var downY = 0f
+    private var longPressFired = false
+    private var moved = false
+    private val longPressCheck = Runnable {
+        if (!moved) {
+            longPressFired = true
+            performLongClick()
+        }
+    }
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) = sample()
     }
@@ -81,17 +93,6 @@ class DeviceStatusView(
     private val area = Path()
     private val areaPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
-    private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onSingleTapUp(e: MotionEvent): Boolean {
-            handleTap(e.x, e.y)
-            return true
-        }
-
-        override fun onLongPress(e: MotionEvent) {
-            performLongClick()
-        }
-    })
-
     init {
         isClickable = true
         isLongClickable = true
@@ -99,6 +100,7 @@ class DeviceStatusView(
             onLongPress(this, item)
             true
         }
+        touchSlop = ViewConfiguration.get(context).scaledTouchSlop
         loadHistory()
         refreshTheme()
         updateSummary()
@@ -178,38 +180,41 @@ class DeviceStatusView(
     }
 
     private fun drawMetrics(canvas: Canvas, padding: Float, w: Float, h: Float) {
-        val left = ringRect.right + dp(12f)
+        val compact = !expanded
         val right = w - padding
         val footerTop = h - padding - dp(13f)
-        val barsTop = footerTop - dp(42f)
+        val left = if (compact) ringRect.right + dp(8f) else ringRect.right + dp(12f)
+        val barsLeft = if (compact) padding else left
+        val barsTop = if (compact) ringRect.bottom + dp(6f) else footerTop - dp(42f)
         val graphTop = padding + dp(1f)
-        val graphBottom = barsTop - dp(6f)
+        val graphBottom = if (compact) ringRect.bottom else barsTop - dp(6f)
         val graphHeight = max(dp(26f), graphBottom - graphTop)
+        val tempValue = VitalsMath.formatTemp(snapshot.batteryTempC)
         if (expanded) {
             val half = (right - left - dp(8f)) / 2f
             drawSpark(
                 canvas, RectF(left, graphTop, left + half, graphTop + graphHeight),
-                history.temperature(), stateColor, 30f, 48f, context.getString(R.string.vitals_temp)
+                history.temperature(), stateColor, tempValue, context.getString(R.string.vitals_temp)
             )
             if (prefs.vitalsCpu) {
                 drawSpark(
                     canvas, RectF(left + half + dp(8f), graphTop, right, graphTop + graphHeight),
-                    history.cpu(), accent, 0f, 100f, context.getString(R.string.vitals_cpu_label)
+                    history.cpu(), accent, VitalsMath.formatPercent(snapshot.cpuPercent), context.getString(R.string.vitals_cpu_label)
                 )
             } else {
                 drawSpark(
                     canvas, RectF(left + half + dp(8f), graphTop, right, graphTop + graphHeight),
-                    history.memory(), accent, 0f, 100f, context.getString(R.string.vitals_memory)
+                    history.memory(), accent, VitalsMath.formatPercent(snapshot.memoryRatio * 100f), context.getString(R.string.vitals_memory)
                 )
             }
         } else {
             drawSpark(
                 canvas, RectF(left, graphTop, right, graphTop + graphHeight),
-                history.temperature(), stateColor, 30f, 48f, context.getString(R.string.vitals_temp)
+                history.temperature(), stateColor, tempValue, context.getString(R.string.vitals_temp)
             )
         }
-        memoryRect.set(left, barsTop, right, barsTop + dp(13f))
-        storageRect.set(left, barsTop + dp(21f), right, barsTop + dp(34f))
+        memoryRect.set(barsLeft, barsTop, right, barsTop + dp(13f))
+        storageRect.set(barsLeft, barsTop + dp(21f), right, barsTop + dp(34f))
         drawBar(
             canvas, memoryRect, context.getString(R.string.vitals_memory),
             displayMemory, "${snapshot.memoryUsed / GB}/${snapshot.memoryTotal / GB} GB", accent
@@ -241,19 +246,23 @@ class DeviceStatusView(
         rect: RectF,
         values: FloatArray,
         color: Int,
-        minValue: Float,
-        maxValue: Float,
+        value: String,
         label: String
     ) {
         if (rect.width() <= 0f || rect.height() <= 0f) return
         textPaint.color = mutedColor
         textPaint.textSize = sp(8f)
         textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText(label, rect.left, rect.top + sp(9f), textPaint)
+        if (rect.width() >= dp(82f)) canvas.drawText(label, rect.left, rect.top + sp(9f), textPaint)
+        textPaint.textAlign = Paint.Align.RIGHT
+        canvas.drawText(value, rect.right, rect.top + sp(9f), textPaint)
         val graphTop = rect.top + sp(12f)
         val graphBottom = rect.bottom
-        val low = min(minValue, values.minOrNull() ?: minValue)
-        val high = max(maxValue, values.maxOrNull() ?: maxValue)
+        val rawLow = values.minOrNull() ?: 0f
+        val rawHigh = values.maxOrNull() ?: 1f
+        val padding = max((rawHigh - rawLow) * 0.15f, 1f)
+        val low = rawLow - padding
+        val high = rawHigh + padding
         val range = (high - low).coerceAtLeast(1f)
         path.reset()
         area.reset()
@@ -359,8 +368,35 @@ class DeviceStatusView(
         }
     }
 
+    @Suppress("ReturnCount")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        return gestures.onTouchEvent(event) || super.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                moved = false
+                longPressFired = false
+                handler.postDelayed(longPressCheck, ViewConfiguration.getLongPressTimeout().toLong())
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (abs(event.x - downX) > touchSlop || abs(event.y - downY) > touchSlop) {
+                    moved = true
+                    handler.removeCallbacks(longPressCheck)
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                handler.removeCallbacks(longPressCheck)
+                if (!longPressFired && !moved) handleTap(event.x, event.y)
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressCheck)
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
     }
 
     private fun refreshTheme() {
@@ -404,7 +440,7 @@ class DeviceStatusView(
 
     companion object {
         private const val HISTORY_SIZE = 60
-        private const val SAMPLE_MS = 60_000L
+        private const val SAMPLE_MS = 15_000L
         private const val GB = 1_073_741_824L
         private const val STORE = "supernova_vitals"
         private const val KEY_TEMP = "temperature"
