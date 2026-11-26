@@ -2188,6 +2188,12 @@ object SettingsCatalogue {
                     set = { viewModel.set(Pref.widgetMemorySaver, it) },
                     subtitle = R.string.widget_memory_saver_summary
                 ),
+                SettingItem.Toggle(
+                    R.string.vitals_cpu,
+                    get = { it.vitalsCpu },
+                    set = { viewModel.set(Pref.vitalsCpu, it) },
+                    subtitle = R.string.vitals_cpu_summary
+                ),
                 SettingItem.Slider(
                     R.string.icon_cache_kb,
                     min = 0, max = 65536, step = 1024,

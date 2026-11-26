@@ -920,6 +920,24 @@ class LauncherViewModel(
         }
     }
 
+    @Suppress("LongParameterList")
+    fun addNativeWidget(
+        page: Int,
+        cellX: Int,
+        cellY: Int,
+        kind: String,
+        label: String,
+        spanX: Int,
+        spanY: Int
+    ) {
+        val prefs = state.value.prefs
+        viewModelScope.launch {
+            repository.addNativeWidget(
+                page, cellX, cellY, prefs.gridCols, prefs.gridRows, kind, label, spanX, spanY
+            )
+        }
+    }
+
     // Every host id the model still references: workspace/dock items plus
     // every widget stack member, feed-card featured widgets. sweepOrphanWidgetIds
     // reclaims the rest, so omitting a source here would delete its live widgets.

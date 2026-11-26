@@ -22,7 +22,8 @@ object WidgetStacks {
         return head + item.widgetStack
     }
 
-    fun canAdd(item: LauncherItem): Boolean = order(item).size < MAX_MEMBERS
+    fun canAdd(item: LauncherItem): Boolean =
+        item.nativeWidgetKind.isEmpty() && order(item).size < MAX_MEMBERS
 
     fun clampFront(orderSize: Int, front: Int): Int =
         if (orderSize <= 0) 0 else front.coerceIn(0, orderSize - 1)

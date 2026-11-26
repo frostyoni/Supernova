@@ -9,7 +9,7 @@ internal object RestoredWidgets {
     // What the import's message counts: widgets and widget cards with no id.
     fun needingRebind(model: LauncherModel): Int =
         model.items.sumOf { item ->
-            if (item.itemType == ItemType.WIDGET) {
+            if (item.itemType == ItemType.WIDGET && item.nativeWidgetKind.isEmpty()) {
                 (if (item.appWidgetId == null) 1 else 0) +
                     item.widgetStack.count { it.appWidgetId == null }
             } else {

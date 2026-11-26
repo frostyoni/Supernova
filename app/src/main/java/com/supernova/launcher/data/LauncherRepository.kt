@@ -509,6 +509,36 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    @Suppress("LongParameterList")
+    suspend fun addNativeWidget(
+        page: Int,
+        cellX: Int,
+        cellY: Int,
+        cols: Int,
+        rows: Int,
+        kind: String,
+        label: String,
+        spanX: Int = NativeWidgets.defaultSpanX(kind),
+        spanY: Int = NativeWidgets.defaultSpanY(kind)
+    ) {
+        val widget = LauncherItem(
+            id = id(),
+            itemType = ItemType.WIDGET,
+            container = ContainerType.WORKSPACE,
+            page = page,
+            cellX = cellX,
+            cellY = cellY,
+            spanX = spanX.coerceAtLeast(1),
+            spanY = spanY.coerceAtLeast(1),
+            nativeWidgetKind = kind,
+            label = label
+        )
+        mutateFitted(cols, rows) { original ->
+            val placed = resolvePlacement(original, widget, cols, rows) ?: widget
+            original.copy(items = original.items + placed)
+        }
+    }
+
     // Provider/grid constraint validation happens in the UI layer (WidgetSizing);
     // the repository enforces only occupancy and the >=1 floor. The anchor cell
     // moves along with the span when resizing from the top or left edge.

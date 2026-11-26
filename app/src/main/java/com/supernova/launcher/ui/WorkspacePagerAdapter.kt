@@ -352,6 +352,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                 "${it.id}:${it.cellX},${it.cellY},${it.spanX},${it.spanY},${it.halfCells}," +
                     "${it.workspaceX},${it.workspaceY},${it.label}," +
                     "${it.swipeAction},${it.swipeActionDown},${it.swipeToOpen},${it.widgetPadding}," +
+                    "${it.nativeWidgetKind}," +
                     "${it.widgetCornerRadius},${it.widgetBorderWidth},${it.widgetBorderColor}," +
                     "${it.widgetShadow},${it.widgetShadowColor}," +
                     // A restored widget's new id swaps its placeholder for the real view.
@@ -375,7 +376,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
             "${prefs.showLabels}|${prefs.subgrid}|${prefs.desktopPaddingH},${prefs.desktopPaddingV}|" +
                     "${prefs.widgetPadding},${prefs.widgetCornerRadius}|" +
                     "${prefs.widgetBorderWidth},${prefs.widgetBorderColor}," +
-                    "${prefs.widgetShadow},${prefs.widgetShadowColor}|" +
+                    "${prefs.widgetShadow},${prefs.widgetShadowColor},${prefs.vitalsCpu}|" +
             "${prefs.labelSize},${prefs.labelColor},${prefs.labelShadow},${prefs.labelFont},${prefs.labelSingleLine}|" +
             "${prefs.iconSwipeIndicator}|" +
             // A rotation changes the padding and the cell arithmetic below,

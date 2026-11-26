@@ -94,6 +94,9 @@ data class LauncherItem(
     // widgetStack[index - 1]. Defaults keep pre-stack JSON intact.
     val widgetStack: List<WidgetStackMember> = emptyList(),
     val widgetStackFront: Int = 0,
+    // Widgets only: a launcher-drawn widget ("vitals") instead of an
+    // AppWidgetProvider host. Empty on every external widget.
+    val nativeWidgetKind: String = "",
     // Any item: a widget peeked at by swiping the icon, in a pop-up anchored
     // at it. The same member shape as a stack's, so restore, backup and
     // release treat it alike; null when the icon has none.
@@ -472,6 +475,7 @@ data class LauncherPrefs(
     val lowRam: Boolean = false,
     val widgetMemorySaver: Boolean = true,
     val iconCacheKb: Int = 0,
+    val vitalsCpu: Boolean = false,
     val showScrims: Boolean = false,
     val wallpaperZoom: Boolean = true,
     // New installs go on the home screen. On by default.

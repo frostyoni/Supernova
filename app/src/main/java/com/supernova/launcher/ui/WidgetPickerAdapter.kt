@@ -338,6 +338,7 @@ class WidgetPickerAdapter(
                 when (entry.target) {
                     is ShortcutTarget.Action -> R.string.launcher_action_row_subtitle
                     ShortcutTarget.Activities -> R.string.activities_row_subtitle
+                    is ShortcutTarget.NativeWidget -> R.string.native_widget_row_subtitle
                     is ShortcutTarget.Create -> R.string.shortcut_row_subtitle
                 }
             )

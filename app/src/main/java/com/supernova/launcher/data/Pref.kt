@@ -172,6 +172,7 @@ object Pref {
     val lowRam = bool("low_ram")
     val widgetMemorySaver = bool("widget_memory_saver")
     val iconCacheKb = int("icon_cache_kb", 0..ICON_CACHE_KB_MAX)
+    val vitalsCpu = bool("vitals_cpu")
     // The drawer's fast scroller on the left, for a left thumb.
     val leftHanded = bool("left_handed")
     // Start the drawer list lower, in the thumb's half.

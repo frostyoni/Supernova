@@ -113,6 +113,12 @@ edges known · **dropped** = considered and deliberately not done.
   to override corner radius, border width/color, shadow, shadow color, and
   padding for that cell alone; **Reset** returns it to the global settings.
   Colors open the normal color picker, not a hex field.
+- **Device status** — *new*. A native Vitals widget in the Supernova picker group:
+  battery ring with charge time, temperature sparkline, memory and storage,
+  uptime, and an optional CPU sparkline (Labs → CPU graph). 2×2 and 4×2 layouts,
+  theme accent with normal/warm/critical colouring, fade-down graph fills, live
+  updates while attached, and per-widget style/padding. Tap the ring for battery,
+  the bars for device care; long-press for the launcher menu.
 - **Pop-up widget** — *stable*. A home icon can carry a widget it peeks at on a
   swipe: a card opens at the icon — above it, below when there is no room above,
   beside it in landscape — holding the widget itself, so its taps and scrolling

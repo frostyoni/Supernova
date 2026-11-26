@@ -128,6 +128,7 @@ class WidgetController(
     // and so do its cached view and size. One left behind by a recreate or a
     // process death in between is reclaimed by sweepOrphanIds.
     fun releaseWidget(item: LauncherItem) {
+        nativeWidgetViews.remove(item.id)
         val ids = listOfNotNull(item.appWidgetId, item.popupWidget?.appWidgetId) +
             item.widgetStack.mapNotNull { it.appWidgetId }
         if (ids.isEmpty()) return
@@ -221,6 +222,7 @@ class WidgetController(
     private val widgetHostViews = mutableMapOf<Int, AppWidgetHostView>()
     // Stack containers, reused across page rebinds so members stop flashing.
     private val stackContainers = mutableMapOf<String, WidgetStackView>()
+    private val nativeWidgetViews = mutableMapOf<String, com.supernova.launcher.ui.vitals.DeviceStatusView>()
     // Pop-up widgets by host id: a second swipe shows the same view rather
     // than a blank one while the provider redelivers.
     private val popupHostViews = mutableMapOf<Int, AppWidgetHostView>()
@@ -939,7 +941,8 @@ class WidgetController(
 
     fun activeWidgetMember(item: LauncherItem): WidgetStackMember? = WidgetStacks.activeMember(item)
 
-    fun canAddToStack(item: LauncherItem): Boolean = WidgetStacks.canAdd(item)
+    fun canAddToStack(item: LauncherItem): Boolean =
+        item.nativeWidgetKind.isEmpty() && WidgetStacks.canAdd(item)
 
     fun trimMemory(level: Int) {
         if (!viewModel.state.value.prefs.widgetMemorySaver) return
@@ -1031,7 +1034,19 @@ class WidgetController(
         return hostView
     }
 
+    private fun nativeWidgetView(item: LauncherItem): View {
+        val prefs = viewModel.state.value.prefs
+        nativeWidgetViews[item.id]?.let { view ->
+            view.update(item, prefs)
+            return view
+        }
+        return com.supernova.launcher.ui.vitals.DeviceStatusView(activity, item, prefs) { view, current ->
+            host.onWidgetLongPress(view, current)
+        }.also { nativeWidgetViews[item.id] = it }
+    }
+
     fun buildWidgetView(item: LauncherItem): View {
+        if (item.nativeWidgetKind.isNotEmpty()) return nativeWidgetView(item)
         // A stack can outlive a missing primary: a restore may have bound a
         // member while the primary still waits for its placeholder.
         if (item.widgetStack.isNotEmpty()) {
