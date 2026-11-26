@@ -96,11 +96,17 @@ edges known · **dropped** = considered and deliberately not done.
 
 - **Widget stacks** — *experimental*. A workspace cell can hold up to **12**
   widgets. Swipe to switch (direction-aware slide, dots with a counter past seven,
-  a light haptic), long-press to add another, and a **Manage stack** sheet listing
-  every member in order (move up/down, remove with the widget id released, add,
-  front marked). A member that scrolls sideways itself keeps the touch stream.
-  Stored as the primary widget plus `widgetStack` members; restore, orphan sweep,
-  page signature and backups all know about them.
+  a light haptic, reduced-motion and animation-speed aware, rapid-swipe safe,
+  accessible next/previous actions), long-press to add another, and a **Manage
+  stack** sheet listing every member in order (move up/down, remove with the
+  widget id released, add, front marked). A member that scrolls sideways itself
+  keeps the touch stream. Stored as the primary widget plus `widgetStack`
+  members; restore, orphan sweep, page signature and backups all know about
+  them. The front is kept on its own widget across reorder/remove, unbound
+  restores and missing providers; duplicate widget ids are rejected; app
+  info/settings and export label target the visible member; adding stops at the
+  total 12-member bound; cached host views and stack containers are reused and
+  released.
 - **Pop-up widget** — *stable*. A home icon can carry a widget it peeks at on a
   swipe: a card opens at the icon — above it, below when there is no room above,
   beside it in landscape — holding the widget itself, so its taps and scrolling

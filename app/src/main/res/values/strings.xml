@@ -1314,6 +1314,8 @@
     <string name="a11y_move_down">Move down</string>
     <string name="a11y_move_previous_page">Move to previous page</string>
     <string name="a11y_move_next_page">Move to next page</string>
+    <string name="a11y_stack_next">Show next widget</string>
+    <string name="a11y_stack_previous">Show previous widget</string>
     <string name="a11y_move_to_dock">Move to dock</string>
     <string name="a11y_move_to_home">Move to home screen</string>
     <string name="a11y_moved">Moved</string>

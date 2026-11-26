@@ -92,4 +92,27 @@ class WidgetStacksTest {
         assertEquals(order, WidgetStacks.move(order, 5, 0))
         assertEquals(order, WidgetStacks.remove(order, -1))
     }
+
+    @Test
+    fun theActiveMemberFollowsTheStoredFrontAndSkipsUnboundMembers() {
+        val unbound = WidgetStackMember(appWidgetId = null, provider = "p/missing", userSerial = 0L)
+        val stacked = item(1, 3).copy(widgetStack = listOf(unbound, member(3)), widgetStackFront = 1)
+        assertEquals(3, WidgetStacks.activeWidgetId(item(1, 3).copy(widgetStackFront = 1)))
+        assertEquals(3, WidgetStacks.activeWidgetId(stacked.copy(widgetStackFront = 2)))
+        assertEquals(3, WidgetStacks.activeWidgetId(stacked.copy(widgetStackFront = 99)))
+        assertEquals(1, WidgetStacks.activeWidgetId(stacked.copy(widgetStackFront = 1)))
+        assertEquals(0, WidgetStacks.clampFront(0, 99))
+        assertEquals(2, WidgetStacks.clampFront(3, 99))
+    }
+
+    @Test
+    fun addingStopsAtTheTotalMemberBoundAndModelIndicesCanBeFound() {
+        val full = (1..WidgetStacks.MAX_MEMBERS).toList().let { ids -> item(*ids.toIntArray()) }
+        assertTrue(WidgetStacks.canAdd(item(1)))
+        assertTrue(!WidgetStacks.canAdd(full))
+        assertTrue(WidgetStacks.canAdd(item(1, 2)))
+        val order = WidgetStacks.order(item(1, 2, 3))
+        assertEquals(2, order.indexOfFirst { it.appWidgetId == 3 })
+        assertEquals(-1, order.indexOfFirst { it.appWidgetId == 99 })
+    }
 }

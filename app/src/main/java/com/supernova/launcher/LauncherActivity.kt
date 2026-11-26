@@ -3891,9 +3891,7 @@ class LauncherActivity :
                     menu.addRow(getString(R.string.padding), R.drawable.ic_menu_padding) {
                         widgets.showPaddingDialog(item, anchor)
                     }
-                    if (item.appWidgetId != null &&
-                        item.widgetStack.size < LauncherRepository.MAX_WIDGET_STACK_MEMBERS
-                    ) {
+                    if (widgets.canAddToStack(item)) {
                         menu.addRow(getString(R.string.widget_add_to_stack), R.drawable.ic_menu_widgets) {
                             widgets.showPickerForStack(item)
                         }
@@ -3930,11 +3928,16 @@ class LauncherActivity :
                 }
                 // The widget menu has the provider's App info, locked or not,
                 // as an app's menu does.
-                item.widgetProvider?.let(ComponentName::unflattenFromString)?.let { provider ->
-                    menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
-                        // The provider names the package and, through the
-                        // user, the profile its details open in.
-                        viewModel.appCatalog().openAppInfo(provider.packageName, provider.className, item.userSerial)
+                widgets.activeWidgetMember(item)?.let { member ->
+                    member.provider
+                        .takeIf { it.isNotBlank() }
+                        ?.let(ComponentName::unflattenFromString)
+                        ?.let { provider ->
+                        menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
+                            viewModel.appCatalog().openAppInfo(
+                                provider.packageName, provider.className, member.userSerial
+                            )
+                        }
                     }
                 }
                 // The widget's own settings screen, for widgets that offer it
@@ -3944,7 +3947,7 @@ class LauncherActivity :
                         widgets.openWidgetSettings(item)
                     }
                 }
-                val widgetLabel = item.appWidgetId?.let(widgets::label)
+                val widgetLabel = widgets.activeWidgetMember(item)?.appWidgetId?.let(widgets::label)
                 addExportPngRow(menu, anchor, widgetLabel ?: item.label)
             }
             ItemType.APP,

@@ -898,8 +898,18 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    private fun canAddNewStackMember(item: LauncherItem, appWidgetId: Int): Boolean =
+        WidgetStacks.canAdd(item) &&
+            item.appWidgetId != appWidgetId &&
+            item.widgetStack.none { it.appWidgetId == appWidgetId }
+
+    private fun canRebindStackMember(item: LauncherItem, memberIndex: Int, appWidgetId: Int): Boolean =
+        memberIndex in item.widgetStack.indices &&
+            item.appWidgetId != appWidgetId &&
+            item.widgetStack.none { it.appWidgetId == appWidgetId }
+
     // Appends a newly-bound widget to a workspace widget stack, up to the
-    // two-widget limit. False when the stack was already full; the caller
+    // member bound. False when the stack was already full; the caller
     // must free the unused id.
     suspend fun addWidgetToStack(
         itemId: String,
@@ -912,7 +922,7 @@ class LauncherRepository(private val context: Context) {
             current.copy(
                 items = current.items.map { item ->
                     if (item.id == itemId && item.itemType == ItemType.WIDGET &&
-                        item.widgetStack.size < MAX_WIDGET_STACK_MEMBERS
+                        canAddNewStackMember(item, appWidgetId)
                     ) {
                         added = true
                         item.copy(
@@ -928,8 +938,8 @@ class LauncherRepository(private val context: Context) {
         return added
     }
 
-    // Removes the stack member at the 1-based front index. Front is reset to
-    // the primary widget. Returns the id that was removed, if any, so the
+    // Removes the stack member at its index in the combined order, keeping
+    // the front on its own widget. Returns the id removed, if any, so the
     // caller can release its host id.
     suspend fun removeWidgetFromStack(itemId: String, frontIndex: Int): Int? {
         var removedId: Int? = null
@@ -937,16 +947,12 @@ class LauncherRepository(private val context: Context) {
             current.copy(
                 items = current.items.map { item ->
                     if (item.id == itemId && item.itemType == ItemType.WIDGET) {
-                        val memberIndex = frontIndex - 1
-                        if (memberIndex in item.widgetStack.indices) {
-                            removedId = item.widgetStack[memberIndex].appWidgetId
-                            item.copy(
-                                widgetStack = item.widgetStack.filterIndexed { i, _ -> i != memberIndex },
-                                widgetStackFront = 0
-                            )
-                        } else {
-                            item
-                        }
+                        val order = WidgetStacks.order(item)
+                        if (frontIndex !in order.indices || frontIndex == 0) return@map item
+                        removedId = order[frontIndex].appWidgetId
+                        val next = WidgetStacks.remove(order, frontIndex)
+                        val front = WidgetStacks.frontAfterRemove(order, frontIndex, item.widgetStackFront)
+                        WidgetStacks.withOrder(item, next, front)
                     } else {
                         item
                     }
@@ -1006,7 +1012,8 @@ class LauncherRepository(private val context: Context) {
             current.copy(
                 items = current.items.map { item ->
                     if (item.id == itemId && item.itemType == ItemType.WIDGET) {
-                        item.copy(widgetStackFront = frontIndex.coerceIn(0, item.widgetStack.size))
+                        val order = WidgetStacks.order(item)
+                        item.copy(widgetStackFront = WidgetStacks.clampFront(order.size, frontIndex))
                     } else {
                         item
                     }
@@ -1020,7 +1027,9 @@ class LauncherRepository(private val context: Context) {
         mutate { current ->
             current.copy(
                 items = current.items.map { item ->
-                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET &&
+                        canRebindStackMember(item, memberIndex, appWidgetId)
+                    ) {
                         item.copy(
                             widgetStack = item.widgetStack.mapIndexed { i, member ->
                                 if (i == memberIndex) member.copy(appWidgetId = appWidgetId) else member

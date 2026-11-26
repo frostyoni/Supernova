@@ -22,6 +22,23 @@ object WidgetStacks {
         return head + item.widgetStack
     }
 
+    fun canAdd(item: LauncherItem): Boolean = order(item).size < MAX_MEMBERS
+
+    fun clampFront(orderSize: Int, front: Int): Int =
+        if (orderSize <= 0) 0 else front.coerceIn(0, orderSize - 1)
+
+    fun activeMember(item: LauncherItem): WidgetStackMember? {
+        val order = order(item)
+        return when {
+            order.isEmpty() -> null
+            order[clampFront(order.size, item.widgetStackFront)].appWidgetId != null ->
+                order[clampFront(order.size, item.widgetStackFront)]
+            else -> order.firstOrNull { it.appWidgetId != null }
+        }
+    }
+
+    fun activeWidgetId(item: LauncherItem): Int? = activeMember(item)?.appWidgetId
+
     fun move(order: List<WidgetStackMember>, from: Int, to: Int): List<WidgetStackMember> {
         if (from !in order.indices || to !in order.indices || from == to) return order
         val next = order.toMutableList()

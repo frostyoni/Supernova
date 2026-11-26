@@ -10,7 +10,10 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.core.view.ViewCompat
+import com.supernova.launcher.R
 import com.supernova.launcher.data.LauncherItem
+import com.supernova.launcher.data.WidgetStacks
 import kotlin.math.abs
 
 // A workspace widget stack: one cell that hosts two app widgets, with a
@@ -22,7 +25,7 @@ class WidgetStackView(
     context: Context,
     private val controller: WidgetController,
     private var item: LauncherItem,
-    private val onLongPress: (View) -> Unit
+    private val onLongPress: (View, LauncherItem) -> Unit
 ) : FrameLayout(context) {
 
     private data class StackChild(
@@ -32,6 +35,10 @@ class WidgetStackView(
 
     private val children = mutableListOf<StackChild>()
     private var frontIndex: Int = 0
+    private var switchGeneration: Int = 0
+    private var switching: Boolean = false
+
+    val currentItem: LauncherItem get() = item
 
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var downX = 0f
@@ -73,28 +80,38 @@ class WidgetStackView(
     init {
         isClickable = true
         isLongClickable = true
+        setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES)
+        ViewCompat.addAccessibilityAction(this, context.getString(R.string.a11y_stack_next)) { _, _ ->
+            showNext()
+            true
+        }
+        ViewCompat.addAccessibilityAction(this, context.getString(R.string.a11y_stack_previous)) { _, _ ->
+            showPrevious()
+            true
+        }
         updateMembers(item)
     }
 
     fun updateMembers(newItem: LauncherItem) {
         item = newItem
-        frontIndex = item.widgetStackFront.coerceIn(0, totalCount() - 1)
 
-        val desiredIds = mutableListOf<Int>()
-        item.appWidgetId?.let { desiredIds += it }
-        item.widgetStack.mapNotNullTo(desiredIds) { it.appWidgetId }
+        val desiredIds = buildList {
+            item.appWidgetId?.let { add(it) }
+            item.widgetStack.mapNotNullTo(this) { it.appWidgetId }
+        }.distinct()
 
-        // Remove ids that are no longer part of this stack.
         val iter = children.iterator()
         while (iter.hasNext()) {
             val child = iter.next()
             if (child.widgetId !in desiredIds) {
+                child.hostView.animate().cancel()
+                child.hostView.alpha = 1f
+                child.hostView.translationX = 0f
                 removeView(child.hostView)
                 iter.remove()
             }
         }
 
-        // Rebuild in desired order, reusing existing host views.
         val reordered = mutableListOf<StackChild>()
         desiredIds.forEachIndexed { index, widgetId ->
             val existing = children.find { it.widgetId == widgetId }
@@ -102,12 +119,10 @@ class WidgetStackView(
                 existing.hostView
             } else {
                 controller.stackMemberHostView(widgetId)?.also { hostView ->
-                    hostView.setOnLongClickListener { v ->
-                        onLongPress(v)
+                    hostView.setOnLongClickListener {
+                        onLongPress(this@WidgetStackView, item)
                         true
                     }
-                    // A cached host view can still hang off the container it
-                    // was built in before a recreate or a rebind.
                     (hostView.parent as? ViewGroup)?.removeView(hostView)
                     addView(hostView, index, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
                 }
@@ -119,6 +134,8 @@ class WidgetStackView(
         children.clear()
         children.addAll(reordered)
 
+        val activeId = WidgetStacks.activeWidgetId(item)
+        frontIndex = children.indexOfFirst { it.widgetId == activeId }.takeIf { it >= 0 } ?: 0
         applyVisibility()
     }
 
@@ -129,10 +146,12 @@ class WidgetStackView(
         }
     }
 
-    private fun totalCount(): Int = 1 + item.widgetStack.size
-
-    private fun applyVisibility() {
+    private fun applyVisibility(force: Boolean = false) {
+        if (switching && !force) return
         children.forEachIndexed { index, child ->
+            child.hostView.animate().cancel()
+            child.hostView.alpha = 1f
+            child.hostView.translationX = 0f
             child.hostView.visibility = if (index == frontIndex) View.VISIBLE else View.INVISIBLE
         }
     }
@@ -151,36 +170,86 @@ class WidgetStackView(
         if (newFront == frontIndex || newFront !in children.indices) return
         val oldChild = children.getOrNull(frontIndex)?.hostView
         val newChild = children.getOrNull(newFront)?.hostView
-        // Which way the stack turned: forward wraps to the first, and the
-        // slide follows the finger rather than always going one way.
         val forward = newFront > frontIndex || (frontIndex == children.size - 1 && newFront == 0)
         val travel = width * SLIDE_FRACTION * (if (forward) -1f else 1f)
         frontIndex = newFront
 
-        oldChild?.animate()
-            ?.alpha(0f)
-            ?.translationX(travel)
-            ?.setDuration(SWITCH_ANIMATION_MS)
-            ?.withEndAction {
-                oldChild.visibility = View.INVISIBLE
-                oldChild.translationX = 0f
-            }
-            ?.start()
-
+        oldChild?.animate()?.cancel()
+        newChild?.animate()?.cancel()
+        oldChild?.alpha = 1f
+        oldChild?.translationX = 0f
+        oldChild?.visibility = View.VISIBLE
         newChild?.alpha = 0f
         newChild?.translationX = -travel
         newChild?.visibility = View.VISIBLE
+
+        val modelOrder = WidgetStacks.order(item)
+        val activeWidgetId = children.getOrNull(frontIndex)?.widgetId
+        val modelIndex = modelOrder.indexOfFirst { it.appWidgetId == activeWidgetId }
+        controller.onStackFrontChanged(item.id, if (modelIndex >= 0) modelIndex else frontIndex)
+
+        val duration = controller.animationDuration(SWITCH_ANIMATION_MS)
+        val generation = ++switchGeneration
+        if (duration <= 0L) {
+            applyVisibility(force = true)
+            invalidate()
+            performStackHaptic()
+            return
+        }
+
+        animateSwitch(oldChild, newChild, travel, duration, generation)
+        invalidate()
+        performStackHaptic()
+    }
+
+    private fun animateSwitch(
+        oldChild: View?,
+        newChild: View?,
+        travel: Float,
+        duration: Long,
+        generation: Int
+    ) {
+        switching = true
+        val interpolator = android.view.animation.DecelerateInterpolator()
+        var pendingAnimations = 0
+        if (oldChild != null) pendingAnimations++
+        pendingAnimations++
+
+        oldChild?.let { old ->
+            old.animate()
+                .alpha(0f)
+                .translationX(travel)
+                .setDuration(duration)
+                .setInterpolator(interpolator)
+                .withEndAction {
+                    if (generation == switchGeneration) {
+                        old.visibility = View.INVISIBLE
+                        old.alpha = 1f
+                        old.translationX = 0f
+                        if (--pendingAnimations == 0) finishSwitch(generation)
+                    }
+                }
+                .start()
+        }
         newChild?.animate()
             ?.alpha(1f)
             ?.translationX(0f)
-            ?.setDuration(SWITCH_ANIMATION_MS)
+            ?.setDuration(duration)
+            ?.setInterpolator(interpolator)
+            ?.withEndAction {
+                if (generation == switchGeneration && --pendingAnimations == 0) finishSwitch(generation)
+            }
             ?.start()
+    }
 
-        // A tick per turn: the stack is under a thumb that cannot see the
-        // dots while it drags.
+    private fun finishSwitch(generation: Int) {
+        if (generation != switchGeneration) return
+        switching = false
+        applyVisibility(force = true)
+    }
+
+    private fun performStackHaptic() {
         performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
-        controller.onStackFrontChanged(item.id, frontIndex)
-        invalidate()
     }
 
     // Whether the showing member scrolls sideways itself. Asked on the press,
@@ -324,6 +393,19 @@ class WidgetStackView(
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
         reportMemberSizes()
+        if (changed) applyVisibility()
+    }
+
+    fun clearStack() {
+        switchGeneration++
+        switching = false
+        children.forEach {
+            it.hostView.animate().cancel()
+            it.hostView.alpha = 1f
+            it.hostView.translationX = 0f
+        }
+        children.clear()
+        removeAllViews()
     }
 
     // Keep the visible child correct when the drag layer hides and shows us.
@@ -331,7 +413,7 @@ class WidgetStackView(
         val changed = this.visibility != visibility
         super.setVisibility(visibility)
         if (changed && visibility == View.VISIBLE) {
-            applyVisibility()
+            applyVisibility(force = true)
         }
     }
 

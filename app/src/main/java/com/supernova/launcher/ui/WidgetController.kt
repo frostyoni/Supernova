@@ -32,6 +32,8 @@ import com.supernova.launcher.gesture.ActionShortcut
 import com.supernova.launcher.gesture.GestureAction
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.LauncherRepository
+import com.supernova.launcher.data.WidgetStackMember
+import com.supernova.launcher.data.WidgetStacks
 import com.supernova.launcher.data.WorkspaceGeometry
 import com.supernova.launcher.databinding.ActivityLauncherBinding
 import com.supernova.launcher.runLogged
@@ -124,7 +126,7 @@ class WidgetController(
             widgetHostViews.remove(id)
             popupHostViews.remove(id)
         }
-        stackContainers.remove(item.id)
+        stackContainers.remove(item.id)?.clearStack()
     }
 
     fun releaseWidgetId(widgetId: Int) {
@@ -675,9 +677,15 @@ class WidgetController(
         viewModel.setWidgetStackFront(itemId, frontIndex)
     }
 
+    fun animationDuration(baseMs: Long): Long = Animations.duration(viewModel.state.value.prefs, baseMs)
+
+    fun activeWidgetMember(item: LauncherItem): WidgetStackMember? = WidgetStacks.activeMember(item)
+
+    fun canAddToStack(item: LauncherItem): Boolean = WidgetStacks.canAdd(item)
+
     // Long-press menu row: pick a widget to add to an existing stack.
     fun showPickerForStack(item: LauncherItem) {
-        if (item.widgetStack.size >= LauncherRepository.MAX_WIDGET_STACK_MEMBERS) {
+        if (!canAddToStack(item)) {
             Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
             return
         }
@@ -765,11 +773,12 @@ class WidgetController(
                     activity,
                     this,
                     item
-                ) { v -> host.onWidgetLongPress(v, item) }
+                ) { view, currentItem -> host.onWidgetLongPress(view, currentItem) }
                 stackContainers[item.id] = container
                 container
             }
         }
+        stackContainers.remove(item.id)?.clearStack()
         val widgetId = item.appWidgetId ?: return fallbackWidgetView(item)
         val hostView = widgetHostViews[widgetId]?.also(::applyWidgetCornerRadius)
             ?: run {
@@ -1046,10 +1055,13 @@ class WidgetController(
     }
 
     fun isReconfigurable(item: LauncherItem): Boolean =
-        item.appWidgetId?.let(appWidgetManager::getAppWidgetInfo)?.let(WidgetFeatures::reconfigurable) == true
+        activeWidgetMember(item)
+            ?.appWidgetId
+            ?.let(appWidgetManager::getAppWidgetInfo)
+            ?.let(WidgetFeatures::reconfigurable) == true
 
     fun openWidgetSettings(item: LauncherItem) {
-        val widgetId = item.appWidgetId ?: return
+        val widgetId = activeWidgetMember(item)?.appWidgetId ?: return
         val opened = runCatching {
             appWidgetHost.startAppWidgetConfigureActivityForResult(
                 activity, widgetId, 0, REQUEST_RECONFIGURE_WIDGET, PendingStarts.options()
@@ -1152,9 +1164,7 @@ class WidgetController(
             }
             is Target.Stack -> {
                 val stackItem = viewModel.state.value.model.items.firstOrNull { it.id == target.itemId }
-                if (stackItem == null ||
-                    stackItem.widgetStack.size >= LauncherRepository.MAX_WIDGET_STACK_MEMBERS
-                ) {
+                if (stackItem == null || !canAddToStack(stackItem)) {
                     WidgetAddTrail.fail("stack full or gone before placing", launcherState())
                     abortPendingWidget()
                     Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
