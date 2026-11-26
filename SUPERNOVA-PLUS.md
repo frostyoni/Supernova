@@ -109,6 +109,10 @@ edges known · **dropped** = considered and deliberately not done.
   only the active member and its neighbours are inflated; hidden members pause
   RemoteViews updates, latest updates are coalesced, and memory pressure trims
   inactive hosts.
+- **Per-widget appearance**: long-press a widget or widget stack → **Appearance**
+  to override corner radius, border width/color, shadow, shadow color, and
+  padding for that cell alone; **Reset appearance** returns it to the global
+  settings.
 - **Pop-up widget** — *stable*. A home icon can carry a widget it peeks at on a
   swipe: a card opens at the icon — above it, below when there is no room above,
   beside it in landscape — holding the widget itself, so its taps and scrolling

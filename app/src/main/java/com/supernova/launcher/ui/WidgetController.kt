@@ -667,7 +667,7 @@ class WidgetController(
     // widgetHostViews so they survive page rebinds, and their corner radius is
     // re-applied each time the container is reused.
     fun stackMemberHostView(widgetId: Int): AppWidgetHostView? {
-        return widgetHostViews[widgetId]?.also(::applyWidgetCornerRadius) ?: run {
+        return widgetHostViews[widgetId]?.also { applyWidgetCornerRadius(it) } ?: run {
             val info = appWidgetManager.getAppWidgetInfo(widgetId) ?: return null
             createWidgetHostView(widgetId, info)?.also { widgetHostViews[widgetId] = it }
         }
@@ -696,6 +696,8 @@ class WidgetController(
         popupHostViews.clear()
     }
 
+    fun showWidgetStyle(item: LauncherItem) = WidgetStyleSheet.show(activity, viewModel, item)
+
     // Long-press menu row: pick a widget to add to an existing stack.
     fun showPickerForStack(item: LauncherItem) {
         if (!canAddToStack(item)) {
@@ -723,7 +725,7 @@ class WidgetController(
         }
         return popupHostViews.getOrPut(widgetId) {
             createWidgetHostView(widgetId, info) ?: return null
-        }.also(::applyWidgetCornerRadius)
+        }.also { applyWidgetCornerRadius(it) }
     }
 
     // The pop-up's row in Edit: the widget's own name, "Widget" when the
@@ -793,7 +795,7 @@ class WidgetController(
         }
         stackContainers.remove(item.id)?.clearStack()
         val widgetId = item.appWidgetId ?: return fallbackWidgetView(item)
-        val hostView = widgetHostViews[widgetId]?.also(::applyWidgetCornerRadius)
+        val hostView = widgetHostViews[widgetId]?.also { applyWidgetCornerRadius(it, item) }
             ?: run {
                 val info = appWidgetManager.getAppWidgetInfo(widgetId) ?: return fallbackWidgetView(item)
                 createWidgetHostView(widgetId, info)?.also { widgetHostViews[widgetId] = it }
@@ -813,8 +815,9 @@ class WidgetController(
     // Our host-view subclass re-asserts the clip after every RemoteViews
     // update, because API 31+ replaces a one-time outline with the
     // framework's own rounded-corner enforcement.
-    fun applyWidgetCornerRadius(hostView: View) {
-        val radiusDp = viewModel.state.value.prefs.widgetCornerRadius
+    fun applyWidgetCornerRadius(hostView: View, item: LauncherItem? = null) {
+        val prefs = viewModel.state.value.prefs
+        val radiusDp = item?.widgetCornerRadius ?: prefs.widgetCornerRadius
         if (hostView is com.supernova.launcher.widget.SupernovaWidgetHostView) {
             hostView.cornerRadiusPx = if (radiusDp > 0) activity.dp(radiusDp).toFloat() else 0f
             return
@@ -834,13 +837,16 @@ class WidgetController(
         }
     }
 
-    fun applyWidgetDecoration(hostView: View) {
+    fun applyWidgetDecoration(hostView: View, item: LauncherItem? = null) {
         val prefs = viewModel.state.value.prefs
-        applyWidgetCornerRadius(hostView)
+        applyWidgetCornerRadius(hostView, item)
         val density = activity.resources.displayMetrics.density
-        val borderWidth = (prefs.widgetBorderWidth * density).toInt()
-        val borderColor = LabelStyler.parseColor(prefs.widgetBorderColor, android.graphics.Color.WHITE)
-        val cornerRadius = activity.dp(prefs.widgetCornerRadius).toFloat()
+        val borderWidth = ((item?.widgetBorderWidth ?: prefs.widgetBorderWidth) * density).toInt()
+        val borderColor = LabelStyler.parseColor(
+            item?.widgetBorderColor?.takeIf { it.isNotBlank() } ?: prefs.widgetBorderColor,
+            android.graphics.Color.WHITE
+        )
+        val cornerRadius = activity.dp(item?.widgetCornerRadius ?: prefs.widgetCornerRadius).toFloat()
         hostView.foreground = if (borderWidth > 0) {
             android.graphics.drawable.GradientDrawable().apply {
                 setColor(android.graphics.Color.TRANSPARENT)
@@ -850,9 +856,12 @@ class WidgetController(
         } else {
             null
         }
-        val shadow = prefs.widgetShadow * density
+        val shadow = (item?.widgetShadow ?: prefs.widgetShadow) * density
         hostView.elevation = shadow
-        val shadowColor = LabelStyler.parseColor(prefs.widgetShadowColor, android.graphics.Color.BLACK)
+        val shadowColor = LabelStyler.parseColor(
+            item?.widgetShadowColor?.takeIf { it.isNotBlank() } ?: prefs.widgetShadowColor,
+            android.graphics.Color.BLACK
+        )
         hostView.outlineSpotShadowColor = shadowColor
         hostView.outlineAmbientShadowColor = shadowColor
     }

@@ -563,6 +563,26 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    suspend fun setWidgetStyle(itemId: String, style: WidgetStyle) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        item.copy(
+                            widgetCornerRadius = style.cornerRadius?.coerceIn(0, MAX_WIDGET_RADIUS_DP),
+                            widgetBorderWidth = style.borderWidth?.coerceIn(0, MAX_WIDGET_BORDER_DP),
+                            widgetBorderColor = style.borderColor?.takeIf { it.isNotBlank() },
+                            widgetShadow = style.shadow?.coerceIn(0, MAX_WIDGET_SHADOW_DP),
+                            widgetShadowColor = style.shadowColor?.takeIf { it.isNotBlank() }
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
     // Long-press > Large icon / Normal icon. Nothing changes where the
     // page has no room for it (the caller says so first).
     suspend fun setIconSize(itemId: String, large: Boolean, cols: Int, rows: Int) {
@@ -1843,5 +1863,8 @@ class LauncherRepository(private val context: Context) {
         // The top of the Widget padding bar, which a widget's own padding
         // shares.
         const val MAX_WIDGET_PADDING_DP = 24
+        const val MAX_WIDGET_RADIUS_DP = 32
+        const val MAX_WIDGET_BORDER_DP = 16
+        const val MAX_WIDGET_SHADOW_DP = 32
     }
 }

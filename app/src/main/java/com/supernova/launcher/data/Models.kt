@@ -84,6 +84,11 @@ data class LauncherItem(
     // Widgets only, per-widget padding: this widget's inset in dp
     // inside its cells. Null follows the Widget padding setting.
     val widgetPadding: Int? = null,
+    val widgetCornerRadius: Int? = null,
+    val widgetBorderWidth: Int? = null,
+    val widgetBorderColor: String? = null,
+    val widgetShadow: Int? = null,
+    val widgetShadowColor: String? = null,
     // Widgets only: the additional widgets in a stack and which one is in front.
     // widgetStackFront is 0 for the primary appWidgetId, or 1..n for
     // widgetStack[index - 1]. Defaults keep pre-stack JSON intact.

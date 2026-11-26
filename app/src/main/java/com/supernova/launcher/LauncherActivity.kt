@@ -3891,6 +3891,13 @@ class LauncherActivity :
                     menu.addRow(getString(R.string.padding), R.drawable.ic_menu_padding) {
                         widgets.showPaddingDialog(item, anchor)
                     }
+                    val appearance = getString(
+                        R.string.widget_appearance,
+                        item.label.ifBlank { getString(R.string.widget) }
+                    )
+                    menu.addRow(appearance, R.drawable.ic_menu_edit) {
+                        widgets.showWidgetStyle(item)
+                    }
                     if (widgets.canAddToStack(item)) {
                         menu.addRow(getString(R.string.widget_add_to_stack), R.drawable.ic_menu_widgets) {
                             widgets.showPickerForStack(item)
@@ -6232,7 +6239,7 @@ class LauncherActivity :
     }
 
     override fun reportWidgetSize(item: LauncherItem, view: View) = widgets.reportWidgetSize(item, view)
-    override fun applyWidgetDecoration(view: View) = widgets.applyWidgetDecoration(view)
+    override fun applyWidgetDecoration(view: View, item: LauncherItem) = widgets.applyWidgetDecoration(view, item)
 
     // The one-time explainer, after the first pop-up widget is bound.
     override fun popupWidgetBound() {

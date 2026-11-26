@@ -91,7 +91,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
         fun state(): LauncherUiState
         fun viewForItem(item: LauncherItem): View
         fun reportWidgetSize(item: LauncherItem, view: View)
-        fun applyWidgetDecoration(view: View)
+        fun applyWidgetDecoration(view: View, item: LauncherItem)
         fun onCanvasLongPress()
         fun onCanvasTap(page: Int, cellX: Int, cellY: Int, workspaceX: Float, workspaceY: Float)
 
@@ -352,6 +352,8 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                 "${it.id}:${it.cellX},${it.cellY},${it.spanX},${it.spanY},${it.halfCells}," +
                     "${it.workspaceX},${it.workspaceY},${it.label}," +
                     "${it.swipeAction},${it.swipeActionDown},${it.swipeToOpen},${it.widgetPadding}," +
+                    "${it.widgetCornerRadius},${it.widgetBorderWidth},${it.widgetBorderColor}," +
+                    "${it.widgetShadow},${it.widgetShadowColor}," +
                     // A restored widget's new id swaps its placeholder for the real view.
                     "${it.appWidgetId}" +
                     stackSignature(it) +
@@ -554,7 +556,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                         // init).
                         // In cells, half ones included (subgrid placement).
                         val rect = WorkspaceGeometry.itemRect(item, cols, rows)
-                        host.applyWidgetDecoration(child)
+                        host.applyWidgetDecoration(child, item)
                         val spanX = (rect.right - rect.left).coerceIn(MIN_WIDGET_SPAN, cols.toFloat())
                         val spanY = (rect.bottom - rect.top).coerceIn(MIN_WIDGET_SPAN, rows.toFloat())
                         canvas.addView(

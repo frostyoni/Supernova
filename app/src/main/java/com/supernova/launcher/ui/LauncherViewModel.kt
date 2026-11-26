@@ -42,6 +42,7 @@ import com.supernova.launcher.data.PrefSpec
 import com.supernova.launcher.data.PrivateSpace
 import com.supernova.launcher.data.TabFolders
 import com.supernova.launcher.data.WidgetStacks
+import com.supernova.launcher.data.WidgetStyle
 import com.supernova.launcher.data.WorkspaceGeometry
 import com.supernova.launcher.data.imports.BackupFiles
 import com.supernova.launcher.data.imports.LayoutConverter
@@ -736,6 +737,9 @@ class LauncherViewModel(
 
     // Null goes back to following the setting.
     fun setWidgetPadding(itemId: String, paddingDp: Int?) = persist { repository.setWidgetPadding(itemId, paddingDp) }
+
+    fun setWidgetStyle(itemId: String, style: WidgetStyle) =
+        persist { repository.setWidgetStyle(itemId, style) }
 
     fun addAppToWorkspace(
         app: LaunchableApp,

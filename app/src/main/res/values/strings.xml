@@ -728,6 +728,8 @@
     <string name="widget_border_color">Widget border color</string>
     <string name="widget_shadow">Widget shadow</string>
     <string name="widget_shadow_color">Widget shadow color</string>
+    <string name="widget_appearance">Appearance · %1$s</string>
+    <string name="widget_reset_appearance">Reset appearance</string>
     <string name="show_scrims">Show shadow</string>
     <string name="show_scrims_summary">A soft shade behind the status bar and the dock</string>
     <string name="wallpaper_zoom">Wallpaper zoom effect</string>
