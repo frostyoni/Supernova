@@ -166,7 +166,7 @@ class PrivateSpaceCard(
             // space's Lock and menu.
             showTitle = true,
             showCount = prefs.folderShowCount,
-            shadow = prefs.folderShadow,
+            look = folderLookOf(prefs, nested = false),
             animate = Animations.enabled(prefs),
             speed = Animations.factor(prefs),
             titleEditable = false,

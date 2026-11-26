@@ -52,12 +52,10 @@ class FolderPopup(private val context: Context) {
         nestedFolder: Boolean = false,
         // folderShowCount pref: the number of apps beside the name.
         showCount: Boolean = false,
-        // folderShadow pref: the card's own elevation, not the window's - the
-        // popup background is transparent, so the layout's 8dp is the shadow
-        // anyone actually sees. Matches the menus; the window fills the screen,
-        // so the only thing that could cut this shadow off is the card sitting
-        // too close to the window's edge, which the margin below covers.
-        shadow: Boolean = true,
+        // The card's own shadow and border: spread (the card's elevation),
+        // shadow colour, and an optional stroke. The window's background is
+        // transparent, so the card's elevation is the shadow anyone sees.
+        look: FolderLook = FolderLook(),
         // Animations.enabled: false skips the open/close transition.
         animate: Boolean = true,
         // Duration multiplier from the animation-speed pref.
@@ -104,6 +102,23 @@ class FolderPopup(private val context: Context) {
                 // sheet; mutate before recoloring so the sheet keeps its color.
                 (binding.folderCard.background?.mutate() as? GradientDrawable)?.setColor(color)
             }
+        }
+        // The card's shadow: elevation is its spread; its colour is settable
+        // from Android 9 (the app's floor). The border is a stroke on the
+        // same shape, so the corners follow it.
+        binding.folderCard.elevation = if (look.shadow) context.dp(look.shadowSpreadDp).toFloat() else 0f
+        if (look.shadow) {
+            // The stored colour or the default: the settings' swatch shows
+            // the same colour the card draws with.
+            val shadow = LabelStyler.parseColor(look.shadowColor, FOLDER_SHADOW_COLOR_DEFAULT)
+            binding.folderCard.outlineAmbientShadowColor = shadow
+            binding.folderCard.outlineSpotShadowColor = shadow
+        }
+        if (look.borderWidthDp > 0) {
+            (binding.folderCard.background?.mutate() as? GradientDrawable)?.setStroke(
+                context.dp(look.borderWidthDp),
+                LabelStyler.parseColor(look.borderColor, FOLDER_BORDER_COLOR_DEFAULT)
+            )
         }
         // The title row reads on the card's own color: a fixed hint was white
         // on the light theme's white card, so an unnamed folder showed nothing.
@@ -179,7 +194,6 @@ class FolderPopup(private val context: Context) {
             }
         }
 
-        if (!shadow) binding.folderCard.elevation = 0f
 
         binding.folderGrid.adapter = adapter
         adapter.submit(members)

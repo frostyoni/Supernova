@@ -8,6 +8,8 @@ import android.content.Intent
 import android.widget.Toast
 import com.supernova.launcher.R
 import com.supernova.launcher.SupernovaApp
+import com.supernova.launcher.ui.FOLDER_BORDER_COLOR_DEFAULT
+import com.supernova.launcher.ui.FOLDER_SHADOW_COLOR_DEFAULT
 import com.supernova.launcher.data.IconGlass
 import com.supernova.launcher.data.IconShape
 import com.supernova.launcher.data.LabelFontStore
@@ -1601,6 +1603,82 @@ object SettingsCatalogue {
                     get = { it.folderShadow },
                     set = { viewModel.set(Pref.folderShadow, it) }
                 ),
+                SettingItem.Slider(
+                    R.string.folder_shadow_spread,
+                    min = 0, max = 24,
+                    get = { it.folderShadowSpread },
+                    set = { viewModel.set(Pref.folderShadowSpread, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ).hiddenWhen { needsOn(R.string.folder_shadow, !it.folderShadow) }.nested(),
+                rows.color(
+                    R.string.folder_shadow_color,
+                    { it.folderShadowColor },
+                    subtitle = { colorLabel(context, it.folderShadowColor, FOLDER_SHADOW_COLOR_DEFAULT) },
+                    default = FOLDER_SHADOW_COLOR_DEFAULT
+                ) { viewModel.set(Pref.folderShadowColor, it) }
+                    .hiddenWhen { needsOn(R.string.folder_shadow, !it.folderShadow) }
+                    .nested(),
+                SettingItem.Slider(
+                    R.string.folder_border_width,
+                    min = 0, max = 4,
+                    get = { it.folderBorderWidth },
+                    set = { viewModel.set(Pref.folderBorderWidth, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ),
+                rows.color(
+                    R.string.folder_border_color,
+                    { it.folderBorderColor },
+                    subtitle = { colorLabel(context, it.folderBorderColor, FOLDER_BORDER_COLOR_DEFAULT) },
+                    default = FOLDER_BORDER_COLOR_DEFAULT
+                ) { viewModel.set(Pref.folderBorderColor, it) }
+                    .hiddenWhen { dependsOn(R.string.folder_border_width, it.folderBorderWidth == 0) },
+                SettingItem.Toggle(
+                    R.string.folder_subfolder_look,
+                    subtitle = R.string.folder_subfolder_look_summary,
+                    get = { it.subfolderDistinct },
+                    set = { viewModel.set(Pref.subfolderDistinct, it) }
+                ),
+                SettingItem.Slider(
+                    R.string.folder_subfolder_shadow_spread,
+                    min = 0, max = 24,
+                    get = { it.subfolderShadowSpread },
+                    set = { viewModel.set(Pref.subfolderShadowSpread, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ).hiddenWhen {
+                    dependsOn(R.string.folder_subfolder_look, !it.subfolderDistinct || !it.folderShadow)
+                }.nested(),
+                rows.color(
+                    R.string.folder_subfolder_shadow_color,
+                    { it.subfolderShadowColor },
+                    subtitle = { colorLabel(context, it.subfolderShadowColor, FOLDER_SHADOW_COLOR_DEFAULT) },
+                    default = FOLDER_SHADOW_COLOR_DEFAULT
+                ) { viewModel.set(Pref.subfolderShadowColor, it) }
+                    .hiddenWhen {
+                        dependsOn(R.string.folder_subfolder_look, !it.subfolderDistinct || !it.folderShadow)
+                    }
+                    .nested(),
+                SettingItem.Slider(
+                    R.string.folder_subfolder_border_width,
+                    min = 0, max = 4,
+                    get = { it.subfolderBorderWidth },
+                    set = { viewModel.set(Pref.subfolderBorderWidth, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ).hiddenWhen {
+                    needsOn(R.string.folder_subfolder_look, !it.subfolderDistinct)
+                }.nested(),
+                rows.color(
+                    R.string.folder_subfolder_border_color,
+                    { it.subfolderBorderColor },
+                    subtitle = { colorLabel(context, it.subfolderBorderColor, FOLDER_BORDER_COLOR_DEFAULT) },
+                    default = FOLDER_BORDER_COLOR_DEFAULT
+                ) { viewModel.set(Pref.subfolderBorderColor, it) }
+                    .hiddenWhen {
+                        dependsOn(
+                            R.string.folder_subfolder_look,
+                            !it.subfolderDistinct || it.subfolderBorderWidth == 0
+                        )
+                    }
+                    .nested(),
                 rows.choice(
                     R.string.folder_scroll, FolderScroll.entries,
                     { it.folderScroll }, { EnumLabels.of(it) }

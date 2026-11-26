@@ -414,6 +414,19 @@ data class LauncherPrefs(
     // Drop shadow under the folder card. Off flattens it onto the wallpaper,
     // which is what a translucent folder surface usually wants.
     val folderShadow: Boolean = true,
+    // Its spread in dp (the card's elevation), its colour ("" = the default)
+    // and an optional border.
+    val folderShadowSpread: Int = 8,
+    val folderShadowColor: String = "",
+    val folderBorderWidth: Int = 0,
+    val folderBorderColor: String = "",
+    // A separate look for a folder opened inside another one, so a subfolder
+    // does not blend into its parent.
+    val subfolderDistinct: Boolean = false,
+    val subfolderShadowSpread: Int = 8,
+    val subfolderShadowColor: String = "",
+    val subfolderBorderWidth: Int = 0,
+    val subfolderBorderColor: String = "",
     // VERTICAL scrolls the folder grid; HORIZONTAL, the default, pages it
     // (FolderScroll).
     val folderScroll: FolderScroll = FolderScroll.HORIZONTAL,

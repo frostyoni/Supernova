@@ -448,6 +448,16 @@
     <string name="dock_bg_behind_nav">Draw behind navigation bar</string>
     <string name="dock_bg_padding">Inset background from edges</string>
     <string name="folder_shadow">Window shadow</string>
+    <string name="folder_shadow_spread">Shadow spread</string>
+    <string name="folder_shadow_color">Shadow colour</string>
+    <string name="folder_border_width">Border width</string>
+    <string name="folder_border_color">Border colour</string>
+    <string name="folder_subfolder_look">Different look inside folders</string>
+    <string name="folder_subfolder_look_summary">A folder opened inside another uses the look below, so it stands out from its parent</string>
+    <string name="folder_subfolder_shadow_spread">Inside: shadow spread</string>
+    <string name="folder_subfolder_shadow_color">Inside: shadow colour</string>
+    <string name="folder_subfolder_border_width">Inside: border width</string>
+    <string name="folder_subfolder_border_color">Inside: border colour</string>
     <string name="drawer_infinite_scroll">Infinite scroll</string>
     <string name="drawer_page_effect">Page transition effect</string>
     <string name="drawer_transition">Transition animation</string>
