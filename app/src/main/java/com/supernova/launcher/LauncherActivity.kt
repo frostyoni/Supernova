@@ -4671,18 +4671,37 @@ class LauncherActivity :
         val card = popup?.contentView?.findViewById<View>(R.id.folderCard) ?: return
         val target = if (stacked) FOLDER_STACK_SCALE else 1f
         val prefs = viewModel.state.value.prefs
+        // The dim is this card's own foreground: only the parent darkens,
+        // the window (and home) behind it stays as it was. The rounded
+        // background's outline clips it to the card's corners.
+        val dim = (card.foreground as? android.graphics.drawable.GradientDrawable)
+            ?: android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.BLACK)
+                alpha = 0
+                card.clipToOutline = true
+                card.foreground = this
+            }
+        val dimTarget = if (stacked) FOLDER_STACK_DIM_ALPHA else 0
+        val duration = (FOLDER_STACK_ANIM_MS * Animations.factor(prefs)).toLong()
         if (!Animations.enabled(prefs)) {
             card.scaleX = target
             card.scaleY = target
+            dim.alpha = dimTarget
             return
         }
         card.pivotX = card.width / 2f
         card.pivotY = card.height / 2f
         card.animate()
             .scaleX(target).scaleY(target)
-            .setDuration((FOLDER_STACK_ANIM_MS * Animations.factor(prefs)).toLong())
+            .setDuration(duration)
             .setInterpolator(android.view.animation.DecelerateInterpolator())
             .start()
+        android.animation.ValueAnimator.ofInt(dim.alpha, dimTarget).apply {
+            this.duration = duration
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener { dim.alpha = it.animatedValue as Int }
+            start()
+        }
     }
 
     private fun showFolderPopup(anchor: View, folder: LauncherItem, nested: Boolean = false) {
@@ -4787,7 +4806,6 @@ class LauncherActivity :
             // A nested card is hosted by the activity, not by the window of
             // the folder it was opened from: that window can be closing.
             windowAnchor = if (nested) binding.root else anchor,
-            scrimColor = if (nested) NESTED_FOLDER_SCRIM else null,
             // The parent comes forward as the child starts to close, in the
             // same beat as the child's collapse.
             onClosing = { if (parentWindow != null) stackFolderCard(parentWindow, stacked = false) },
@@ -6230,9 +6248,10 @@ class LauncherActivity :
 
     companion object {
         // A folder opened inside another pushes its parent back by this much
-        // and dims it, so the two read as a stack rather than one card.
+        // and dims that card alone, so the two read as a stack rather than
+        // one card. The dim is the card's foreground alpha (0-255).
         private const val FOLDER_STACK_SCALE = 0.94f
-        private const val NESTED_FOLDER_SCRIM = 0x33000000
+        private const val FOLDER_STACK_DIM_ALPHA = 0x33
         private const val FOLDER_STACK_ANIM_MS = 160L
 
         // The smallest a pop-up widget card may be dragged, in dp: below the

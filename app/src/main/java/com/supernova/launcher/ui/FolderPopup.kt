@@ -83,10 +83,7 @@ class FolderPopup(private val context: Context) {
         // activity's window normally; a folder opened from inside another
         // folder has an anchor in that folder's window, and anchoring the
         // new card to a window that is going away was a BadToken crash.
-        windowAnchor: View = anchor,
-        // A nested folder dims the folder (and home) behind it, so the stack
-        // reads; null keeps the window clear, as a top-level folder does.
-        scrimColor: Int? = null
+        windowAnchor: View = anchor
     ): PopupWindow {
         // A drawer folder can be opened with the drawer's search keyboard up;
         // the card takes focus and would drop it a step late otherwise.
@@ -257,13 +254,8 @@ class FolderPopup(private val context: Context) {
         }
 
         // The root always fills the window so the card can expand from the
-        // icon underneath it; WINDOW mode keeps the scrim transparent unless
-        // this card is a nested one, which dims what is behind it.
-        if (immersive) {
-            binding.folderScrim.setBackgroundColor(IMMERSIVE_SCRIM)
-        } else {
-            scrimColor?.let(binding.folderScrim::setBackgroundColor)
-        }
+        // icon underneath it; WINDOW mode just keeps the scrim transparent.
+        if (immersive) binding.folderScrim.setBackgroundColor(IMMERSIVE_SCRIM)
         binding.folderCard.layoutParams = FrameLayout.LayoutParams(
             if (immersive) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
