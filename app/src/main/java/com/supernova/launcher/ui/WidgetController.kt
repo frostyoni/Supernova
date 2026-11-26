@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.SizeF
@@ -16,6 +17,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,9 +38,14 @@ import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.LauncherRepository
 import com.supernova.launcher.data.WidgetStackMember
 import com.supernova.launcher.data.WidgetStacks
+import com.supernova.launcher.data.WidgetStyle
 import com.supernova.launcher.data.WorkspaceGeometry
 import com.supernova.launcher.databinding.ActivityLauncherBinding
 import com.supernova.launcher.runLogged
+import com.supernova.launcher.ui.settings.ColorSheet
+import com.supernova.launcher.ui.settings.SettingsCatalogue
+import com.supernova.launcher.ui.theme.PaletteFactory
+import com.supernova.launcher.ui.theme.ThemeEngine
 import com.supernova.launcher.widget.SupernovaWidgetHost
 import com.supernova.launcher.widget.SupernovaWidgetHostView
 import com.supernova.launcher.widget.hasScrollableContent
@@ -491,56 +500,39 @@ class WidgetController(
     fun showPaddingDialog(item: LauncherItem, widgetView: View) {
         val params = widgetView.layoutParams as? WorkspaceCanvas.WidgetParams
         val originalInset = params?.inset
-        val row = com.supernova.launcher.databinding.ItemSettingSliderBinding.inflate(activity.layoutInflater)
-        var value = viewModel.widgetPaddingDp(item)
+        val prefs = viewModel.state.value.prefs
+        val state = AppearanceState(item, prefs)
         fun preview(dp: Int) {
             params ?: return
             params.inset = activity.dp(dp)
             widgetView.requestLayout()
         }
-        fun render() {
-            row.settingValue.text = activity.getString(R.string.padding_dp_value, value)
-            row.settingSeek.progress = value
-            preview(value)
-        }
-        row.settingTitle.text = item.label.ifBlank { activity.getString(R.string.widget) }
-        row.settingSeek.max = LauncherRepository.MAX_WIDGET_PADDING_DP
-        row.settingSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                value = progress
-                render()
-            }
-
-            override fun onStartTrackingTouch(bar: android.widget.SeekBar) = Unit
-
-            override fun onStopTrackingTouch(bar: android.widget.SeekBar) = Unit
-        })
-        row.stepDown.setOnClickListener {
-            value = (value - 1).coerceAtLeast(0)
-            render()
-        }
-        row.stepUp.setOnClickListener {
-            value = (value + 1).coerceAtMost(LauncherRepository.MAX_WIDGET_PADDING_DP)
-            render()
-        }
-        render()
+        val scroll = ScrollView(activity).apply { addView(appearanceContent(state, ::preview)) }
         var committed = false
+        val title = activity.getString(
+            R.string.widget_appearance,
+            item.label.ifBlank { activity.getString(R.string.widget) }
+        )
         MaterialAlertDialogBuilder(activity)
-            .setTitle(R.string.padding)
-            .setView(row.root)
+            .setTitle(title)
+            .setView(scroll)
             .setPositiveButton(R.string.save) { _, _ ->
                 committed = true
-                viewModel.setWidgetPadding(item.id, value)
+                preview(state.padding)
+                viewModel.setWidgetPadding(
+                    item.id,
+                    state.padding.takeIf { it != prefs.widgetPadding }
+                )
+                viewModel.setWidgetStyle(item.id, state.style())
             }
-            .setNeutralButton(R.string.option_default) { _, _ ->
+            .setNeutralButton(R.string.widget_reset) { _, _ ->
                 committed = true
-                preview(viewModel.state.value.prefs.widgetPadding)
+                preview(prefs.widgetPadding)
                 viewModel.setWidgetPadding(item.id, null)
+                viewModel.setWidgetStyle(item.id, WidgetStyle())
             }
             .setNegativeButton(R.string.cancel, null)
             .setOnDismissListener {
-                // Cancel, back or a tap outside: the preview goes back.
                 if (!committed && params != null && originalInset != null) {
                     params.inset = originalInset
                     widgetView.requestLayout()
@@ -548,14 +540,161 @@ class WidgetController(
             }
             .showTracked()
             .window?.let { window ->
-                // In the half of the screen the widget isn't in, over a light
-                // dim, so the preview stays in view.
                 val location = IntArray(2).also(widgetView::getLocationOnScreen)
-                val widgetCenterY = location[1] + widgetView.height / 2
-                val upperHalf = widgetCenterY < activity.resources.displayMetrics.heightPixels / 2
+                val widgetCenterY = location[1] + widgetView.height / HALF
+                val upperHalf = widgetCenterY < activity.resources.displayMetrics.heightPixels / HALF
                 window.setGravity(if (upperHalf) Gravity.BOTTOM else Gravity.TOP)
                 window.setDimAmount(PREVIEW_DIALOG_DIM)
             }
+    }
+
+    private fun appearanceContent(state: AppearanceState, preview: (Int) -> Unit): LinearLayout {
+        val content = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                activity.dp(APPEARANCE_SIDE_PAD), activity.dp(APPEARANCE_TOP_PAD),
+                activity.dp(APPEARANCE_SIDE_PAD), 0
+            )
+        }
+        appearanceSlider(
+            content, R.string.padding, LauncherRepository.MAX_WIDGET_PADDING_DP, state.padding
+        ) {
+            state.padding = it
+            preview(it)
+        }
+        appearanceSlider(
+            content, R.string.widget_corner_radius,
+            LauncherRepository.MAX_WIDGET_RADIUS_DP, state.cornerRadius
+        ) { state.cornerRadius = it }
+        appearanceSlider(
+            content, R.string.widget_border_width,
+            LauncherRepository.MAX_WIDGET_BORDER_DP, state.borderWidth
+        ) { state.borderWidth = it }
+        appearanceColorRow(content, R.string.widget_border_color, state.borderColor, Color.WHITE) {
+            state.borderColor = it
+        }
+        appearanceSlider(
+            content, R.string.widget_shadow,
+            LauncherRepository.MAX_WIDGET_SHADOW_DP, state.shadow
+        ) { state.shadow = it }
+        appearanceColorRow(content, R.string.widget_shadow_color, state.shadowColor, Color.BLACK) {
+            state.shadowColor = it
+        }
+        return content
+    }
+
+    private class AppearanceState(item: LauncherItem, private val prefs: LauncherPrefs) {
+        var padding = item.widgetPadding ?: prefs.widgetPadding
+        var cornerRadius = item.widgetCornerRadius ?: prefs.widgetCornerRadius
+        var borderWidth = item.widgetBorderWidth ?: prefs.widgetBorderWidth
+        var borderColor = item.widgetBorderColor.orEmpty().ifBlank { prefs.widgetBorderColor }
+        var shadow = item.widgetShadow ?: prefs.widgetShadow
+        var shadowColor = item.widgetShadowColor.orEmpty().ifBlank { prefs.widgetShadowColor }
+
+        fun style(): WidgetStyle = WidgetStyle(
+            cornerRadius = cornerRadius.takeIf { it != prefs.widgetCornerRadius },
+            borderWidth = borderWidth.takeIf { it != prefs.widgetBorderWidth },
+            borderColor = borderColor.takeIf { it.isNotBlank() && it != prefs.widgetBorderColor },
+            shadow = shadow.takeIf { it != prefs.widgetShadow },
+            shadowColor = shadowColor.takeIf { it.isNotBlank() && it != prefs.widgetShadowColor }
+        )
+    }
+
+    private fun appearanceSlider(
+        parent: LinearLayout,
+        title: Int,
+        max: Int,
+        value: Int,
+        onChange: (Int) -> Unit
+    ) {
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        val label = TextView(activity).apply {
+            text = activity.getString(title)
+            textSize = APPEARANCE_TEXT_SP
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val current = TextView(activity).apply { text = value.toString() }
+        header.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT))
+        header.addView(current)
+        val seek = SeekBar(activity).apply {
+            this.max = max
+            progress = value.coerceIn(0, max)
+            minimumHeight = activity.dp(APPEARANCE_SEEK_HEIGHT)
+            setPadding(
+                0, activity.dp(APPEARANCE_SEEK_PAD),
+                0, activity.dp(APPEARANCE_SEEK_PAD)
+            )
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                    current.text = progress.toString()
+                    onChange(progress)
+                }
+
+                override fun onStartTrackingTouch(bar: SeekBar) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar) = Unit
+            })
+        }
+        parent.addView(header)
+        parent.addView(
+            seek,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                activity.dp(APPEARANCE_SEEK_HEIGHT)
+            )
+        )
+    }
+
+    private fun appearanceColorRow(
+        parent: LinearLayout,
+        title: Int,
+        value: String,
+        default: Int,
+        onPicked: (String) -> Unit
+    ) {
+        val row = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_PAD), 0, activity.dp(APPEARANCE_ROW_PAD))
+            isClickable = true
+        }
+        val dot = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                activity.dp(APPEARANCE_DOT), activity.dp(APPEARANCE_DOT)
+            )
+        }
+        val label = TextView(activity).apply { textSize = APPEARANCE_TEXT_SP }
+        fun render(color: String) {
+            dot.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(LabelStyler.parseColor(color, default))
+                setStroke(activity.dp(APPEARANCE_DOT_STROKE), COLOR_DOT_STROKE)
+            }
+            label.text = SettingsCatalogue.colorLabel(activity, color, default)
+        }
+        render(value)
+        row.addView(dot)
+        row.addView(
+            label,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT).apply {
+                marginStart = activity.dp(APPEARANCE_GAP)
+            }
+        )
+        row.setOnClickListener {
+            val prefs = viewModel.state.value.prefs
+            val palette = PaletteFactory.resolve(
+                activity, prefs.paletteSource, prefs.paletteSeed,
+                ThemeEngine.accentColor(activity, prefs.accentColor)
+            )
+            ColorSheet(activity, palette, default).show(title, value) { picked ->
+                onPicked(picked)
+                render(picked)
+            }
+        }
+        parent.addView(row)
     }
 
     // Overlays a draggable resize frame on top of the widget's host view; the
@@ -695,8 +834,6 @@ class WidgetController(
         widgetHostViews.clear()
         popupHostViews.clear()
     }
-
-    fun showWidgetStyle(item: LauncherItem) = WidgetStyleSheet.show(activity, viewModel, item)
 
     // Long-press menu row: pick a widget to add to an existing stack.
     fun showPickerForStack(item: LauncherItem) {
@@ -1276,6 +1413,19 @@ class WidgetController(
         // The dim behind the padding dialog, which previews on the home screen.
         private const val PREVIEW_DIALOG_DIM = 0.15f
         private const val FALLBACK_PADDING_DP = 8
+        private const val COLOR_DOT_STROKE = 0x33FFFFFF
+        private const val APPEARANCE_SIDE_PAD = 24
+        private const val APPEARANCE_TOP_PAD = 8
+        private const val APPEARANCE_ROW_TOP = 10
+        private const val APPEARANCE_ROW_PAD = 12
+        private const val APPEARANCE_SEEK_HEIGHT = 48
+        private const val APPEARANCE_SEEK_PAD = 8
+        private const val APPEARANCE_TEXT_SP = 16f
+        private const val APPEARANCE_WEIGHT = 1f
+        private const val APPEARANCE_DOT = 24
+        private const val APPEARANCE_DOT_STROKE = 1
+        private const val APPEARANCE_GAP = 16
+        private const val HALF = 2
 
         // One thread for every host view's inflation, shared by the activity
         // instances a recreate makes.

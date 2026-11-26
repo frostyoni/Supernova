@@ -3888,15 +3888,8 @@ class LauncherActivity :
                     menu.addRow(getString(R.string.widget_resize), R.drawable.ic_menu_resize) {
                         widgets.showResizeFrame(item, anchor)
                     }
-                    menu.addRow(getString(R.string.padding), R.drawable.ic_menu_padding) {
+                    menu.addRow(getString(R.string.widget_style_and_padding), R.drawable.ic_menu_padding) {
                         widgets.showPaddingDialog(item, anchor)
-                    }
-                    val appearance = getString(
-                        R.string.widget_appearance,
-                        item.label.ifBlank { getString(R.string.widget) }
-                    )
-                    menu.addRow(appearance, R.drawable.ic_menu_edit) {
-                        widgets.showWidgetStyle(item)
                     }
                     if (widgets.canAddToStack(item)) {
                         menu.addRow(getString(R.string.widget_add_to_stack), R.drawable.ic_menu_widgets) {
