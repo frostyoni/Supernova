@@ -70,6 +70,10 @@ class FolderPopup(private val context: Context) {
         onRename: (String) -> Unit,
         // The title row's overflow button, handed over to anchor a menu on.
         onMenu: ((View) -> Unit)? = null,
+        // Called as the card starts to close (the scrim tap), before the
+        // collapse animation: a nested folder's parent can come forward in
+        // the same beat. Back and other dismiss paths call onDismiss only.
+        onClosing: (() -> Unit)? = null,
         onDismiss: (() -> Unit)? = null,
         // The screen y the card stays above: the dock's top, so a folder
         // opened from the dock or the home grid never covers the dock's
@@ -79,7 +83,10 @@ class FolderPopup(private val context: Context) {
         // activity's window normally; a folder opened from inside another
         // folder has an anchor in that folder's window, and anchoring the
         // new card to a window that is going away was a BadToken crash.
-        windowAnchor: View = anchor
+        windowAnchor: View = anchor,
+        // A nested folder dims the folder (and home) behind it, so the stack
+        // reads; null keeps the window clear, as a top-level folder does.
+        scrimColor: Int? = null
     ): PopupWindow {
         // A drawer folder can be opened with the drawer's search keyboard up;
         // the card takes focus and would drop it a step late otherwise.
@@ -250,8 +257,13 @@ class FolderPopup(private val context: Context) {
         }
 
         // The root always fills the window so the card can expand from the
-        // icon underneath it; WINDOW mode just keeps the scrim transparent.
-        if (immersive) binding.folderScrim.setBackgroundColor(IMMERSIVE_SCRIM)
+        // icon underneath it; WINDOW mode keeps the scrim transparent unless
+        // this card is a nested one, which dims what is behind it.
+        if (immersive) {
+            binding.folderScrim.setBackgroundColor(IMMERSIVE_SCRIM)
+        } else {
+            scrimColor?.let(binding.folderScrim::setBackgroundColor)
+        }
         binding.folderCard.layoutParams = FrameLayout.LayoutParams(
             if (immersive) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -270,11 +282,12 @@ class FolderPopup(private val context: Context) {
         var closing = false
         fun animateClose() {
             if (closing) return
+            closing = true
+            onClosing?.invoke()
             if (!animate) {
                 popup.dismiss()
                 return
             }
-            closing = true
             binding.root.animate().alpha(0f).setDuration((CLOSE_MS * speed).toLong()).start()
             binding.folderCard.animate()
                 .scaleX(openScale).scaleY(openScale)

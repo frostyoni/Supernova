@@ -4660,12 +4660,36 @@ class LauncherActivity :
         val above = folderWindows.subList(index + 1, folderWindows.size).toList()
         folderWindows.subList(index, folderWindows.size).clear()
         above.forEach { it.dismiss() }
+        // The card that was behind the one closing becomes the front one, so
+        // it comes back to full size.
+        stackFolderCard(folderWindows.lastOrNull(), stacked = false)
+    }
+
+    // Pushes a folder card back (or brings it forward) for the stack: a
+    // short scale around its own centre, skipped when animations are off.
+    private fun stackFolderCard(popup: android.widget.PopupWindow?, stacked: Boolean) {
+        val card = popup?.contentView?.findViewById<View>(R.id.folderCard) ?: return
+        val target = if (stacked) FOLDER_STACK_SCALE else 1f
+        val prefs = viewModel.state.value.prefs
+        if (!Animations.enabled(prefs)) {
+            card.scaleX = target
+            card.scaleY = target
+            return
+        }
+        card.pivotX = card.width / 2f
+        card.pivotY = card.height / 2f
+        card.animate()
+            .scaleX(target).scaleY(target)
+            .setDuration((FOLDER_STACK_ANIM_MS * Animations.factor(prefs)).toLong())
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
     }
 
     private fun showFolderPopup(anchor: View, folder: LauncherItem, nested: Boolean = false) {
         // One folder from the home at a time; a folder inside a folder opens
         // above its parent, which stays where it is.
         if (!nested) closeFolderWindows()
+        val parentWindow = if (nested) folderWindows.lastOrNull() else null
         var folderAdapter: FolderMemberAdapter? = null
         var popup: android.widget.PopupWindow? = null
         // Moving an app inside the card, before it is taken out past the
@@ -4763,6 +4787,10 @@ class LauncherActivity :
             // A nested card is hosted by the activity, not by the window of
             // the folder it was opened from: that window can be closing.
             windowAnchor = if (nested) binding.root else anchor,
+            scrimColor = if (nested) NESTED_FOLDER_SCRIM else null,
+            // The parent comes forward as the child starts to close, in the
+            // same beat as the child's collapse.
+            onClosing = { if (parentWindow != null) stackFolderCard(parentWindow, stacked = false) },
             onRename = { viewModel.renameFolder(folder.id, it) },
             // The title row's overflow: Select apps and Sort, as the folder's
             // long-press has them. Opened by a tap, so modal at once, and the
@@ -4823,6 +4851,9 @@ class LauncherActivity :
             folderWindows.remove(it)
             folderWindows.add(it)
         }
+        // The parent settles back as the child arrives; the child's scrim
+        // dims it, so the new card stands out without a full-screen modal.
+        stackFolderCard(parentWindow, stacked = true)
         // Every touch on the card goes through the item gesture first: an
         // app held there, the drag it becomes, and the press that closes its
         // menu once modal, swallowed so it doesn't also launch the app it
@@ -6198,6 +6229,12 @@ class LauncherActivity :
     }
 
     companion object {
+        // A folder opened inside another pushes its parent back by this much
+        // and dims it, so the two read as a stack rather than one card.
+        private const val FOLDER_STACK_SCALE = 0.94f
+        private const val NESTED_FOLDER_SCRIM = 0x33000000
+        private const val FOLDER_STACK_ANIM_MS = 160L
+
         // The smallest a pop-up widget card may be dragged, in dp: below the
         // provider's cell minimum, which is usually most of a phone screen.
         private const val POPUP_WIDGET_MIN_W_DP = 160
