@@ -638,7 +638,31 @@ object SettingsCatalogue {
                     get = { it.widgetCornerRadius },
                     set = { viewModel.set(Pref.widgetCornerRadius, it) },
                     display = { context.getString(R.string.padding_dp_value, it) }
-                )
+                ),
+                SettingItem.Slider(
+                    R.string.widget_border_width,
+                    min = 0, max = 16,
+                    get = { it.widgetBorderWidth },
+                    set = { viewModel.set(Pref.widgetBorderWidth, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ),
+                rows.color(
+                    R.string.widget_border_color,
+                    { it.widgetBorderColor },
+                    default = android.graphics.Color.WHITE
+                ) { viewModel.set(Pref.widgetBorderColor, it) },
+                SettingItem.Slider(
+                    R.string.widget_shadow,
+                    min = 0, max = 32,
+                    get = { it.widgetShadow },
+                    set = { viewModel.set(Pref.widgetShadow, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ),
+                rows.color(
+                    R.string.widget_shadow_color,
+                    { it.widgetShadowColor },
+                    default = android.graphics.Color.BLACK
+                ) { viewModel.set(Pref.widgetShadowColor, it) },
             )
         ),
         SettingsSection(
@@ -2151,6 +2175,32 @@ object SettingsCatalogue {
                     get = { it.lowSpec },
                     set = { viewModel.set(Pref.lowSpec, it) },
                     subtitle = R.string.labs_low_spec_summary
+                ),
+                SettingItem.Toggle(
+                    R.string.labs_low_ram,
+                    get = { it.lowRam },
+                    set = { viewModel.set(Pref.lowRam, it) },
+                    subtitle = R.string.labs_low_ram_summary
+                ),
+                SettingItem.Toggle(
+                    R.string.widget_memory_saver,
+                    get = { it.widgetMemorySaver },
+                    set = { viewModel.set(Pref.widgetMemorySaver, it) },
+                    subtitle = R.string.widget_memory_saver_summary
+                ),
+                SettingItem.Slider(
+                    R.string.icon_cache_kb,
+                    min = 0, max = 65536, step = 1024,
+                    get = { it.iconCacheKb },
+                    set = { viewModel.set(Pref.iconCacheKb, it) },
+                    display = { value ->
+                        if (value == 0) {
+                            context.getString(R.string.icon_cache_automatic)
+                        } else {
+                            context.getString(R.string.memory_kb_value, value)
+                        }
+                    },
+                    note = { context.getString(R.string.icon_cache_kb_summary) }
                 ),
                 SettingItem.Toggle(
                     R.string.labs_show_component,

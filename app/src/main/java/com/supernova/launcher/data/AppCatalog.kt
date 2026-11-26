@@ -26,6 +26,7 @@ sealed interface AppChange {
     data class Updated(val userSerial: Long, val packageNames: List<String> = emptyList()) : AppChange
 }
 
+@Suppress("LargeClass")
 class AppCatalog(
     private val context: Context,
     private val iconPacks: IconPackRepository = IconPackRepository(context)
@@ -51,8 +52,8 @@ class AppCatalog(
     private var themedIconFg: Int = 0
     // An eighth of the heap holds every icon of a large app list; the old
     // fixed 4 MB thrashed at ~55 icons and turned scrolling into re-renders.
-    private val iconCacheKb =
-        ((Runtime.getRuntime().maxMemory() / 8) / 1024).toInt().coerceIn(8 * 1024, 64 * 1024)
+    private var iconCacheKb =
+        automaticIconCacheKb()
     private val iconCache = object : LruCache<String, Drawable>(iconCacheKb) {
         override fun sizeOf(key: String, value: Drawable): Int {
             val bitmap = IconRenderer.bitmapOf(value) ?: return estimatedKb(value)
@@ -65,6 +66,20 @@ class AppCatalog(
     // entry is cached - LruCache throws when sizeOf changes its answer - so
     // it can't follow the render size, which the icon size and the display
     // density now move.
+    private fun automaticIconCacheKb(): Int =
+        ((Runtime.getRuntime().maxMemory() / 8) / 1024).toInt().coerceIn(8 * 1024, 64 * 1024)
+
+    fun setIconCacheKb(requestedKb: Int, lowRam: Boolean = false) {
+        val automatic = automaticIconCacheKb()
+        val next = when {
+            requestedKb <= 0 -> automatic
+            else -> requestedKb.coerceIn(1, 64 * 1024)
+        }.let { if (lowRam) it.coerceAtMost(8 * 1024) else it }
+        if (next == iconCacheKb) return
+        iconCacheKb = next
+        synchronized(renderLock) { iconCache.resize(next) }
+    }
+
     private fun estimatedKb(value: Drawable): Int {
         val width = value.intrinsicWidth.takeIf { it > 0 } ?: FALLBACK_ICON_PX
         val height = value.intrinsicHeight.takeIf { it > 0 } ?: FALLBACK_ICON_PX

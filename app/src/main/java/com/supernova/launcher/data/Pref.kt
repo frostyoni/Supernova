@@ -131,6 +131,9 @@ object Pref {
     private const val DESKTOP_PADDING_MAX = 48
     private const val WIDGET_PADDING_MAX = 24
     private const val WIDGET_RADIUS_MAX = 32
+    private const val WIDGET_BORDER_MAX = 16
+    private const val WIDGET_SHADOW_MAX = 32
+    private const val ICON_CACHE_KB_MAX = 64 * 1024
     private const val DOCK_BG_RADIUS_MAX = 24
     private const val LABEL_SIZE_MIN = 9
     private const val LABEL_SIZE_MAX = 18
@@ -166,6 +169,9 @@ object Pref {
     val dockSuggestions = bool("dock_suggestions")
     // Strip the heavy work: animations, wallpaper zoom, the glass shader.
     val lowSpec = bool("low_spec")
+    val lowRam = bool("low_ram")
+    val widgetMemorySaver = bool("widget_memory_saver")
+    val iconCacheKb = int("icon_cache_kb", 0..ICON_CACHE_KB_MAX)
     // The drawer's fast scroller on the left, for a left thumb.
     val leftHanded = bool("left_handed")
     // Start the drawer list lower, in the thumb's half.
@@ -312,6 +318,10 @@ object Pref {
     val paletteSeed = text("palette_seed")
     val styleConfig = text("style_config")
     val widgetCornerRadius = int("widget_corner_radius", 0..WIDGET_RADIUS_MAX)
+    val widgetBorderWidth = int("widget_border_width", 0..WIDGET_BORDER_MAX)
+    val widgetBorderColor = text("widget_border_color")
+    val widgetShadow = int("widget_shadow", 0..WIDGET_SHADOW_MAX)
+    val widgetShadowColor = text("widget_shadow_color")
     val showScrims = bool("show_scrims")
     val wallpaperZoom = bool("wallpaper_zoom")
     val autoAddApps = bool("auto_add_apps")

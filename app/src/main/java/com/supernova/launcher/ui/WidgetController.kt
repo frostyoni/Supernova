@@ -688,6 +688,7 @@ class WidgetController(
     fun canAddToStack(item: LauncherItem): Boolean = WidgetStacks.canAdd(item)
 
     fun trimMemory(level: Int) {
+        if (!viewModel.state.value.prefs.widgetMemorySaver) return
         if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) return
         lastReportedSizes.clear()
         stackContainers.values.forEach(WidgetStackView::trimInactiveMembers)
@@ -812,7 +813,7 @@ class WidgetController(
     // Our host-view subclass re-asserts the clip after every RemoteViews
     // update, because API 31+ replaces a one-time outline with the
     // framework's own rounded-corner enforcement.
-    private fun applyWidgetCornerRadius(hostView: View) {
+    fun applyWidgetCornerRadius(hostView: View) {
         val radiusDp = viewModel.state.value.prefs.widgetCornerRadius
         if (hostView is com.supernova.launcher.widget.SupernovaWidgetHostView) {
             hostView.cornerRadiusPx = if (radiusDp > 0) activity.dp(radiusDp).toFloat() else 0f
@@ -831,6 +832,29 @@ class WidgetController(
         override fun getOutline(view: View, outline: android.graphics.Outline) {
             outline.setRoundRect(0, 0, view.width, view.height, radiusPx)
         }
+    }
+
+    fun applyWidgetDecoration(hostView: View) {
+        val prefs = viewModel.state.value.prefs
+        applyWidgetCornerRadius(hostView)
+        val density = activity.resources.displayMetrics.density
+        val borderWidth = (prefs.widgetBorderWidth * density).toInt()
+        val borderColor = LabelStyler.parseColor(prefs.widgetBorderColor, android.graphics.Color.WHITE)
+        val cornerRadius = activity.dp(prefs.widgetCornerRadius).toFloat()
+        hostView.foreground = if (borderWidth > 0) {
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.TRANSPARENT)
+                setStroke(borderWidth, borderColor)
+                setCornerRadius(cornerRadius)
+            }
+        } else {
+            null
+        }
+        val shadow = prefs.widgetShadow * density
+        hostView.elevation = shadow
+        val shadowColor = LabelStyler.parseColor(prefs.widgetShadowColor, android.graphics.Color.BLACK)
+        hostView.outlineSpotShadowColor = shadowColor
+        hostView.outlineAmbientShadowColor = shadowColor
     }
 
     // A widget with no live id: its name, and if its provider is installed, a

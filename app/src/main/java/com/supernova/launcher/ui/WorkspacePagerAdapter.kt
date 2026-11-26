@@ -86,10 +86,12 @@ internal fun workspacePlacement(canvas: View, prefs: LauncherPrefs, rawX: Float,
 
 class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
+    @Suppress("TooManyFunctions")
     interface Host {
         fun state(): LauncherUiState
         fun viewForItem(item: LauncherItem): View
         fun reportWidgetSize(item: LauncherItem, view: View)
+        fun applyWidgetDecoration(view: View)
         fun onCanvasLongPress()
         fun onCanvasTap(page: Int, cellX: Int, cellY: Int, workspaceX: Float, workspaceY: Float)
 
@@ -369,7 +371,9 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
         val prefs = state.prefs
         return "$items|$stack|${prefs.gridRows}x${prefs.gridCols}|${prefs.iconScale}|" +
             "${prefs.showLabels}|${prefs.subgrid}|${prefs.desktopPaddingH},${prefs.desktopPaddingV}|" +
-            "${prefs.widgetPadding},${prefs.widgetCornerRadius}|" +
+                    "${prefs.widgetPadding},${prefs.widgetCornerRadius}|" +
+                    "${prefs.widgetBorderWidth},${prefs.widgetBorderColor}," +
+                    "${prefs.widgetShadow},${prefs.widgetShadowColor}|" +
             "${prefs.labelSize},${prefs.labelColor},${prefs.labelShadow},${prefs.labelFont},${prefs.labelSingleLine}|" +
             "${prefs.iconSwipeIndicator}|" +
             // A rotation changes the padding and the cell arithmetic below,
@@ -550,6 +554,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                         // init).
                         // In cells, half ones included (subgrid placement).
                         val rect = WorkspaceGeometry.itemRect(item, cols, rows)
+                        host.applyWidgetDecoration(child)
                         val spanX = (rect.right - rect.left).coerceIn(MIN_WIDGET_SPAN, cols.toFloat())
                         val spanY = (rect.bottom - rect.top).coerceIn(MIN_WIDGET_SPAN, rows.toFloat())
                         canvas.addView(

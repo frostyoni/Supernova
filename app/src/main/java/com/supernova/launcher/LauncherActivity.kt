@@ -2877,7 +2877,7 @@ class LauncherActivity :
                     this,
                     glass.look,
                     glass.backdrop,
-                    prefs.lowSpec
+                    prefs.lowSpec || prefs.lowRam
                 ).also {
                     // Glass needs to read as a surface even at the dock's
                     // usual low opacity; the slider can only add to that.
@@ -5842,7 +5842,7 @@ class LauncherActivity :
         popupWidgetMaxW = right - x
         popupWidgetMinH = peekMinH.coerceAtMost(maxCardH)
         popupWidgetMaxH = bottom - y - tabDrop
-        val animate = !viewModel.state.value.prefs.lowSpec
+        val animate = !viewModel.state.value.prefs.lowSpec && !viewModel.state.value.prefs.lowRam
         if (animate) {
             content.alpha = 0f
             content.scaleX = 0.94f
@@ -6232,6 +6232,7 @@ class LauncherActivity :
     }
 
     override fun reportWidgetSize(item: LauncherItem, view: View) = widgets.reportWidgetSize(item, view)
+    override fun applyWidgetDecoration(view: View) = widgets.applyWidgetDecoration(view)
 
     // The one-time explainer, after the first pop-up widget is bound.
     override fun popupWidgetBound() {

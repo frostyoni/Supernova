@@ -14,7 +14,7 @@ import com.supernova.launcher.data.SettingEnumSerializer
 // scroller-driven motion (page flips, smooth scrolls) would play on.
 object Animations {
     fun enabled(prefs: LauncherPrefs): Boolean =
-        !prefs.disableAnimations && !prefs.lowSpec && ValueAnimator.areAnimatorsEnabled()
+        !prefs.disableAnimations && !prefs.lowSpec && !prefs.lowRam && ValueAnimator.areAnimatorsEnabled()
 
     // Duration multiplier for the launcher's own animations; 0 when disabled.
     fun factor(prefs: LauncherPrefs): Float =
@@ -33,7 +33,7 @@ object Animations {
     // launcher's own switch turns it off: the effect follows the finger and
     // the scroller's settle, neither of which the system scale slows, so it
     // plays with the system's animations removed too.
-    fun pageEffects(prefs: LauncherPrefs): Boolean = !prefs.disableAnimations && !prefs.lowSpec
+    fun pageEffects(prefs: LauncherPrefs): Boolean = !prefs.disableAnimations && !prefs.lowSpec && !prefs.lowRam
 }
 
 // Playback speed for launcher-owned animations. RELAXED keeps the tuned

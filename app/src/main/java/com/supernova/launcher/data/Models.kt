@@ -460,6 +460,13 @@ data class LauncherPrefs(
     val styleConfig: String = "",
     // Corner clip radius for widget host views in dp; 0 = no clip.
     val widgetCornerRadius: Int = 16,
+    val widgetBorderWidth: Int = 0,
+    val widgetBorderColor: String = "",
+    val widgetShadow: Int = 0,
+    val widgetShadowColor: String = "",
+    val lowRam: Boolean = false,
+    val widgetMemorySaver: Boolean = true,
+    val iconCacheKb: Int = 0,
     val showScrims: Boolean = false,
     val wallpaperZoom: Boolean = true,
     // New installs go on the home screen. On by default.

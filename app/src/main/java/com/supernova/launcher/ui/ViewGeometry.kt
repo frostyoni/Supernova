@@ -42,6 +42,10 @@ internal fun View.screenScale(): PointF {
 // The canvas of the page the pager is showing (or heading to).
 internal fun ViewPager2.currentWorkspaceCanvas(): ViewGroup? {
     val recycler = getChildAt(0) as? RecyclerView ?: return null
-    val holder = recycler.findViewHolderForAdapterPosition(currentItem) ?: return null
-    return holder.itemView.findViewById(R.id.workspaceCanvas)
+    val holder = recycler.findViewHolderForAdapterPosition(currentItem)
+        ?: recycler.findViewHolderForAdapterPosition(
+            (adapter as? WorkspacePagerAdapter)?.realPage(currentItem) ?: currentItem
+        )
+        ?: return null
+    return holder.itemView.findViewById<ViewGroup>(R.id.workspaceCanvas)
 }

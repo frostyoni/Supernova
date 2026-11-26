@@ -724,6 +724,10 @@
     <string name="desktop_grid">Desktop grid</string>
     <string name="grid_value">%1$d × %2$d</string>
     <string name="widget_corner_radius">Widget corner radius</string>
+    <string name="widget_border_width">Widget border width</string>
+    <string name="widget_border_color">Widget border color</string>
+    <string name="widget_shadow">Widget shadow</string>
+    <string name="widget_shadow_color">Widget shadow color</string>
     <string name="show_scrims">Show shadow</string>
     <string name="show_scrims_summary">A soft shade behind the status bar and the dock</string>
     <string name="wallpaper_zoom">Wallpaper zoom effect</string>
@@ -816,6 +820,14 @@
     <string name="glass_degrees_value">%1$d°</string>
     <string name="labs_low_spec">Low-spec mode</string>
     <string name="labs_low_spec_summary">No animations, no wallpaper zoom, and the dock glass stops using the shader</string>
+    <string name="labs_low_ram">Low-RAM mode</string>
+    <string name="labs_low_ram_summary">Smaller icon cache, no animations, no wallpaper blur, and tighter widget memory reuse; independent of Low-spec mode</string>
+    <string name="widget_memory_saver">Widget memory saver</string>
+    <string name="widget_memory_saver_summary">Trim hidden widget hosts on memory pressure; disable for high-spec devices</string>
+    <string name="icon_cache_kb">Icon cache size</string>
+    <string name="icon_cache_kb_summary">0 uses one eighth of available heap; Low-RAM mode caps it</string>
+    <string name="icon_cache_automatic">Automatic</string>
+    <string name="memory_kb_value">%1$d KB</string>
     <string name="left_handed">Left-handed</string>
     <string name="left_handed_summary">Put the drawer\'s fast scroller on the left</string>
     <string name="labs_show_component">Show component in edit dialog</string>

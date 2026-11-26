@@ -314,6 +314,14 @@ class LauncherViewModel(
                 launches.value += 1
             }
         }
+        viewModelScope.launch {
+            preferences.flow
+                .map { it.iconCacheKb to it.lowRam }
+                .distinctUntilChanged()
+                .collect { (kb, lowRam) ->
+                    withContext(Dispatchers.Default) { catalog.setIconCacheKb(kb, lowRam) }
+                }
+        }
         // Smart folders are on by default, so the category folders are made
         // automatically; the toggle and the install hook regenerate them, so
         // this first pass only covers a store that has none yet.
