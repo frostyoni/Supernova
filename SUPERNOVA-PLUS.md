@@ -23,6 +23,13 @@ edges known · **dropped** = considered and deliberately not done.
   The action is only offered on folder icons; home gestures and standalone action
   icons cannot select it.
 
+- **Folder look** — *stable*. The window group controls the card's shadow
+  spread (its elevation, 0–24dp) and colour, plus a border width and colour.
+  *Different look inside folders* gives a folder opened inside another its own
+  shadow spread/colour and border, so a subfolder stands out from its parent;
+  off, it uses the folder look. Defaults keep the old look (shadow on, 8dp,
+  no border). The drawer folder and private space take the folder look.
+
 - **Nested folders** — *experimental*. A folder inside a folder, on the home
   screen or the dock: dragging a folder onto another nests it (a folder cannot
   be dropped into itself or into a folder it contains). The child opens as its
