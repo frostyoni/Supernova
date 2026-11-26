@@ -338,7 +338,6 @@ class WidgetStackView(
     }
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-        gesture.onTouchEvent(ev)
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = ev.x
