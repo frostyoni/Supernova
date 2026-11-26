@@ -725,6 +725,9 @@
     <string name="grid_value">%1$d × %2$d</string>
     <string name="widget_corner_radius">Widget corner radius</string>
     <string name="widget_border_width">Widget border width</string>
+    <string name="widget_border_short">Border</string>
+    <string name="widget_corner_short">Corners</string>
+    <string name="widget_shadow_short">Shadow</string>
     <string name="widget_border_color">Widget border color</string>
     <string name="widget_shadow">Widget shadow</string>
     <string name="widget_shadow_color">Widget shadow color</string>

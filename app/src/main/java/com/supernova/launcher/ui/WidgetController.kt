@@ -508,7 +508,19 @@ class WidgetController(
             params.inset = activity.dp(dp)
             widgetView.requestLayout()
         }
-        val scroll = ScrollView(activity).apply { addView(appearanceContent(state, ::preview)) }
+        fun previewStyle() {
+            applyWidgetDecoration(
+                widgetView,
+                item.copy(
+                    widgetCornerRadius = state.cornerRadius,
+                    widgetBorderWidth = state.borderWidth,
+                    widgetBorderColor = state.borderColor.takeIf { it.isNotBlank() },
+                    widgetShadow = state.shadow,
+                    widgetShadowColor = state.shadowColor.takeIf { it.isNotBlank() }
+                )
+            )
+        }
+        val scroll = ScrollView(activity).apply { addView(appearanceContent(state, ::preview, ::previewStyle)) }
         var committed = false
         val title = activity.getString(
             R.string.widget_appearance,
@@ -529,14 +541,27 @@ class WidgetController(
             .setNeutralButton(R.string.widget_reset) { _, _ ->
                 committed = true
                 preview(prefs.widgetPadding)
+                applyWidgetDecoration(
+                    widgetView,
+                    item.copy(
+                        widgetCornerRadius = null,
+                        widgetBorderWidth = null,
+                        widgetBorderColor = null,
+                        widgetShadow = null,
+                        widgetShadowColor = null
+                    )
+                )
                 viewModel.setWidgetPadding(item.id, null)
                 viewModel.setWidgetStyle(item.id, WidgetStyle())
             }
             .setNegativeButton(R.string.cancel, null)
             .setOnDismissListener {
-                if (!committed && params != null && originalInset != null) {
-                    params.inset = originalInset
-                    widgetView.requestLayout()
+                if (!committed) {
+                    if (params != null && originalInset != null) {
+                        params.inset = originalInset
+                        widgetView.requestLayout()
+                    }
+                    applyWidgetDecoration(widgetView, item)
                 }
             }
             .showTracked()
@@ -549,7 +574,11 @@ class WidgetController(
             }
     }
 
-    private fun appearanceContent(state: AppearanceState, preview: (Int) -> Unit): LinearLayout {
+    private fun appearanceContent(
+        state: AppearanceState,
+        preview: (Int) -> Unit,
+        previewStyle: () -> Unit
+    ): LinearLayout {
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
@@ -557,36 +586,61 @@ class WidgetController(
                 activity.dp(APPEARANCE_SIDE_PAD), 0
             )
         }
-        appearanceSlider(
-            content, R.string.padding, LauncherRepository.MAX_WIDGET_PADDING_DP, state.padding
+        val size = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        appearanceColumn(
+            size, R.string.padding, LauncherRepository.MAX_WIDGET_PADDING_DP, state.padding
         ) {
             state.padding = it
             preview(it)
         }
-        appearanceSlider(
-            content, R.string.widget_corner_radius,
+        appearanceColumn(
+            size, R.string.widget_corner_short,
             LauncherRepository.MAX_WIDGET_RADIUS_DP, state.cornerRadius
-        ) { state.cornerRadius = it }
-        appearanceSlider(
-            content, R.string.widget_border_width,
+        ) {
+            state.cornerRadius = it
+            previewStyle()
+        }
+        content.addView(size)
+        val contrast = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        appearanceColumn(
+            contrast, R.string.widget_border_short,
             LauncherRepository.MAX_WIDGET_BORDER_DP, state.borderWidth
-        ) { state.borderWidth = it }
-        appearanceSlider(
-            content, R.string.widget_shadow,
+        ) {
+            state.borderWidth = it
+            previewStyle()
+        }
+        appearanceColumn(
+            contrast, R.string.widget_shadow_short,
             LauncherRepository.MAX_WIDGET_SHADOW_DP, state.shadow
-        ) { state.shadow = it }
+        ) {
+            state.shadow = it
+            previewStyle()
+        }
+        content.addView(contrast)
+        content.addView(appearanceColors(state, previewStyle))
+        return content
+    }
+
+    private fun appearanceColors(state: AppearanceState, previewStyle: () -> Unit): LinearLayout {
         val colors = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
         }
         appearanceColorChip(colors, R.string.widget_border_color, state.borderColor, Color.WHITE) {
             state.borderColor = it
+            previewStyle()
         }
         appearanceColorChip(colors, R.string.widget_shadow_color, state.shadowColor, Color.BLACK) {
             state.shadowColor = it
+            previewStyle()
         }
-        content.addView(colors)
-        return content
+        return colors
     }
 
     private class AppearanceState(item: LauncherItem, private val prefs: LauncherPrefs) {
@@ -603,6 +657,24 @@ class WidgetController(
             borderColor = borderColor.takeIf { it.isNotBlank() && it != prefs.widgetBorderColor },
             shadow = shadow.takeIf { it != prefs.widgetShadow },
             shadowColor = shadowColor.takeIf { it.isNotBlank() && it != prefs.widgetShadowColor }
+        )
+    }
+
+    private fun appearanceColumn(
+        parent: LinearLayout,
+        title: Int,
+        max: Int,
+        value: Int,
+        onChange: (Int) -> Unit
+    ) {
+        val column = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, activity.dp(APPEARANCE_COLUMN_GAP), 0)
+        }
+        appearanceSlider(column, title, max, value, onChange)
+        parent.addView(
+            column,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT)
         )
     }
 
@@ -1002,13 +1074,9 @@ class WidgetController(
             hostView.cornerRadiusPx = if (radiusDp > 0) activity.dp(radiusDp).toFloat() else 0f
             return
         }
-        if (radiusDp > 0) {
-            hostView.outlineProvider = RoundedOutlineProvider(activity.dp(radiusDp).toFloat())
-            hostView.clipToOutline = true
-        } else {
-            hostView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-            hostView.clipToOutline = false
-        }
+        hostView.outlineProvider = RoundedOutlineProvider(activity.dp(radiusDp).toFloat())
+        hostView.clipToOutline = radiusDp > 0
+        hostView.invalidateOutline()
     }
 
     private class RoundedOutlineProvider(private val radiusPx: Float) : android.view.ViewOutlineProvider() {
@@ -1483,6 +1551,7 @@ class WidgetController(
         private const val APPEARANCE_DOT = 18
         private const val APPEARANCE_DOT_STROKE = 1
         private const val APPEARANCE_GAP = 8
+        private const val APPEARANCE_COLUMN_GAP = 8
         private const val HALF = 2
 
         // One thread for every host view's inflation, shared by the activity

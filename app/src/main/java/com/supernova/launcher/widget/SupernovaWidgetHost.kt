@@ -135,7 +135,7 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
     // public setters - long after any synchronous re-assertion. While the
     // launcher owns a radius, competing writes are ignored.
     override fun setOutlineProvider(provider: ViewOutlineProvider?) {
-        if (cornerRadiusPx > 0f && provider !== outline) return
+        if (provider !== outline) return
         super.setOutlineProvider(provider)
     }
 
@@ -152,14 +152,9 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
     }
 
     private fun applyCornerClip() {
-        if (cornerRadiusPx > 0f) {
-            super.setOutlineProvider(outline)
-            super.setClipToOutline(true)
-            invalidateOutline()
-        } else {
-            super.setOutlineProvider(ViewOutlineProvider.BACKGROUND)
-            super.setClipToOutline(false)
-        }
+        super.setOutlineProvider(outline)
+        super.setClipToOutline(cornerRadiusPx > 0f)
+        invalidateOutline()
     }
 
     private var longPressFired = false
