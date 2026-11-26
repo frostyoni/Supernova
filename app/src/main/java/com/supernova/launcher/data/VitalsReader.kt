@@ -57,9 +57,9 @@ class VitalsReader(private val context: Context) {
     private fun readCpu(): Float {
         val line = runCatching {
             java.io.File("/proc/stat").useLines { it.firstOrNull() }
-        }.getOrNull() ?: return 0f
-        val parts = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
-        if (parts.size < 4) return 0f
+        }.getOrNull()
+        val parts = line?.trim()?.split(Regex("\\s+"))?.drop(1)?.mapNotNull { it.toLongOrNull() }
+        if (parts == null || parts.size < 4) return readCpuFrequency()
         val idle = parts[3] + (parts.getOrNull(4) ?: 0L)
         val total = parts.sum()
         val totalDelta = total - lastCpuTotal
@@ -68,5 +68,31 @@ class VitalsReader(private val context: Context) {
         lastCpuIdle = idle
         if (totalDelta <= 0L) return 0f
         return ((totalDelta - idleDelta).toFloat() / totalDelta * 100f).coerceIn(0f, 100f)
+    }
+
+    @Suppress("ReturnCount")
+    private fun readCpuFrequency(): Float {
+        val dirs = runCatching {
+            java.io.File("/sys/devices/system/cpu").listFiles()?.filter {
+                it.isDirectory && it.name.startsWith("cpu") &&
+                    it.name.drop(3).isNotEmpty() && it.name.drop(3).all(Char::isDigit)
+            }
+        }.getOrNull() ?: return 0f
+        var sum = 0L
+        var count = 0
+        var max = 0L
+        dirs.forEach { dir ->
+            val current = runCatching {
+                java.io.File(dir, "cpufreq/scaling_cur_freq").readText().trim().toLong()
+            }.getOrNull() ?: return@forEach
+            val limit = runCatching {
+                java.io.File(dir, "cpufreq/cpuinfo_max_freq").readText().trim().toLong()
+            }.getOrNull() ?: current
+            sum += current
+            max = maxOf(max, limit)
+            count++
+        }
+        if (count == 0 || max <= 0L) return 0f
+        return (sum.toFloat() / count / max * 100f).coerceIn(0f, 100f)
     }
 }

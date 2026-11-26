@@ -144,11 +144,11 @@ class DeviceStatusView(
         canvas.drawRoundRect(0f, 0f, w, h, radius, radius, fill)
         drawRing(canvas, padding, h)
         drawMetrics(canvas, padding, w, h)
-        drawFooter(canvas, padding, w, h)
+        if (expanded) drawFooter(canvas, padding, w, h)
     }
 
     private fun drawRing(canvas: Canvas, padding: Float, h: Float) {
-        val size = if (expanded) min(h - padding * 2f, dp(126f)) else min(h - padding * 2f, dp(96f))
+        val size = if (expanded) min(h - padding * 2f, dp(126f)) else min(h * 0.58f, dp(92f))
         val left = padding
         val top = padding + (h - padding * 2f - size) / 2f
         ringRect.set(left, top, left + size, top + size)
@@ -282,7 +282,7 @@ class DeviceStatusView(
         area.close()
         areaPaint.shader = LinearGradient(
             0f, graphTop, 0f, graphBottom,
-            ColorUtils.setAlphaComponent(color, 68), Color.TRANSPARENT, Shader.TileMode.CLAMP
+            ColorUtils.setAlphaComponent(color, 96), Color.TRANSPARENT, Shader.TileMode.CLAMP
         )
         canvas.drawPath(area, areaPaint)
         areaPaint.shader = null
