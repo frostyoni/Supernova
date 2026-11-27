@@ -95,6 +95,13 @@ class WidgetStackView(
 
     fun updateMembers(newItem: LauncherItem) {
         item = newItem
+        switchGeneration++
+        switching = false
+        children.forEach { child ->
+            child.hostView?.animate()?.cancel()
+            child.hostView?.alpha = 1f
+            child.hostView?.translationX = 0f
+        }
 
         val desiredIds = buildList {
             item.appWidgetId?.let { add(it) }
@@ -398,7 +405,7 @@ class WidgetStackView(
     // horizontal moves for this gesture, and the request goes on up so the
     // page pager leaves it alone too.
     override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
-        if (disallowIntercept) childClaimsStream = true
+        if (disallowIntercept && frontScrolls) childClaimsStream = true
         super.requestDisallowInterceptTouchEvent(disallowIntercept)
     }
 

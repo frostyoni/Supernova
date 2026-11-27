@@ -476,6 +476,7 @@ data class LauncherPrefs(
     val widgetMemorySaver: Boolean = true,
     val iconCacheKb: Int = 0,
     val vitalsCpu: Boolean = false,
+    val vitalsRefreshSec: Int = 15,
     val showScrims: Boolean = false,
     val wallpaperZoom: Boolean = true,
     // New installs go on the home screen. On by default.

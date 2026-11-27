@@ -109,15 +109,17 @@ class DeviceStatusView(
     fun update(newItem: LauncherItem, newPrefs: LauncherPrefs) {
         item = newItem
         prefs = newPrefs
+        handler.removeCallbacks(sampleRunnable)
         refreshTheme()
         invalidate()
+        if (isAttachedToWindow) handler.postDelayed(sampleRunnable, refreshMs())
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         context.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         sample()
-        handler.postDelayed(sampleRunnable, SAMPLE_MS)
+        handler.postDelayed(sampleRunnable, refreshMs())
     }
 
     override fun onDetachedFromWindow() {
@@ -144,7 +146,6 @@ class DeviceStatusView(
         canvas.drawRoundRect(0f, 0f, w, h, radius, radius, fill)
         drawRing(canvas, padding, h)
         drawMetrics(canvas, padding, w, h)
-        if (expanded) drawFooter(canvas, padding, w, h)
     }
 
     private fun drawRing(canvas: Canvas, padding: Float, h: Float) {
@@ -182,10 +183,9 @@ class DeviceStatusView(
     private fun drawMetrics(canvas: Canvas, padding: Float, w: Float, h: Float) {
         val compact = !expanded
         val right = w - padding
-        val footerTop = h - padding - dp(13f)
         val left = if (compact) ringRect.right + dp(8f) else ringRect.right + dp(12f)
         val barsLeft = if (compact) padding else left
-        val barsTop = if (compact) ringRect.bottom + dp(6f) else footerTop - dp(42f)
+        val barsTop = if (compact) ringRect.bottom + dp(6f) else h - padding - dp(34f)
         val graphTop = padding + dp(1f)
         val graphBottom = if (compact) ringRect.bottom else barsTop - dp(6f)
         val graphHeight = max(dp(26f), graphBottom - graphTop)
@@ -221,22 +221,7 @@ class DeviceStatusView(
         )
         drawBar(
             canvas, storageRect, context.getString(R.string.vitals_storage),
-            displayStorage, "${snapshot.storageUsed / GB}/${snapshot.storageTotal / GB} GB", mutedColor
-        )
-    }
-
-    private fun drawFooter(canvas: Canvas, padding: Float, w: Float, h: Float) {
-        textPaint.color = mutedColor
-        textPaint.textSize = sp(9f)
-        textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText(
-            context.getString(R.string.vitals_up, VitalsMath.formatUptime(snapshot.uptimeMs)),
-            padding, h - padding - dp(1f), textPaint
-        )
-        textPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(
-            if (snapshot.charging) context.getString(R.string.vitals_charging) else context.getString(R.string.vitals_battery),
-            w - padding, h - padding - dp(1f), textPaint
+            displayStorage, "${snapshot.storageUsed / GB}/${snapshot.storageTotal / GB} GB", accent
         )
     }
 
@@ -250,6 +235,11 @@ class DeviceStatusView(
         label: String
     ) {
         if (rect.width() <= 0f || rect.height() <= 0f) return
+        fill.color = ColorUtils.setAlphaComponent(textColor, 14)
+        canvas.drawRoundRect(
+            rect.left - dp(6f), rect.top - dp(4f), rect.right + dp(2f), rect.bottom + dp(2f),
+            dp(12f), dp(12f), fill
+        )
         textPaint.color = mutedColor
         textPaint.textSize = sp(8f)
         textPaint.textAlign = Paint.Align.LEFT
@@ -307,7 +297,7 @@ class DeviceStatusView(
         textPaint.color = textColor
         textPaint.textAlign = Paint.Align.RIGHT
         canvas.drawText(value, rect.right, rect.top, textPaint)
-        fill.color = ColorUtils.setAlphaComponent(color, 36)
+        fill.color = ColorUtils.setAlphaComponent(textColor, 30)
         canvas.drawRoundRect(rect.left, rect.top + dp(4f), rect.right, rect.top + dp(7f), dp(2f), dp(2f), fill)
         fill.color = color
         canvas.drawRoundRect(
@@ -356,7 +346,7 @@ class DeviceStatusView(
     private val sampleRunnable = object : Runnable {
         override fun run() {
             sample()
-            handler.postDelayed(this, SAMPLE_MS)
+            handler.postDelayed(this, refreshMs())
         }
     }
 
@@ -435,12 +425,13 @@ class DeviceStatusView(
             .apply()
     }
 
+    private fun refreshMs(): Long = prefs.vitalsRefreshSec.coerceIn(VitalsMath.REFRESH_MIN_SEC, VitalsMath.REFRESH_MAX_SEC) * 1000L
+
     private fun dp(value: Float): Float = value * density
     private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
 
     companion object {
         private const val HISTORY_SIZE = 60
-        private const val SAMPLE_MS = 15_000L
         private const val GB = 1_073_741_824L
         private const val STORE = "supernova_vitals"
         private const val KEY_TEMP = "temperature"

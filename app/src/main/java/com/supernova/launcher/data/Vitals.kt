@@ -24,6 +24,9 @@ data class VitalsSnapshot(
 }
 
 object VitalsMath {
+    const val REFRESH_MIN_SEC = 5
+    const val REFRESH_MAX_SEC = 300
+
     fun state(snapshot: VitalsSnapshot): VitalsState = when {
         snapshot.batteryPercent in 1..10 -> VitalsState.CRITICAL
         snapshot.batteryTempC >= 45f -> VitalsState.CRITICAL

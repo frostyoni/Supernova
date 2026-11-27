@@ -17,6 +17,7 @@ import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.CustomTransition
 import com.supernova.launcher.data.LockMethod
 import com.supernova.launcher.data.Pref
+import com.supernova.launcher.data.VitalsMath
 import com.supernova.launcher.data.SearchWindowMode
 import kotlin.math.roundToInt
 import com.supernova.launcher.ui.BadgePosition
@@ -2193,6 +2194,14 @@ object SettingsCatalogue {
                     get = { it.vitalsCpu },
                     set = { viewModel.set(Pref.vitalsCpu, it) },
                     subtitle = R.string.vitals_cpu_summary
+                ),
+                SettingItem.Slider(
+                    R.string.vitals_refresh,
+                    min = VitalsMath.REFRESH_MIN_SEC, max = VitalsMath.REFRESH_MAX_SEC, step = 5,
+                    get = { it.vitalsRefreshSec },
+                    set = { viewModel.set(Pref.vitalsRefreshSec, it) },
+                    display = { context.getString(R.string.vitals_seconds, it) },
+                    note = { context.getString(R.string.vitals_refresh_summary) }
                 ),
                 SettingItem.Slider(
                     R.string.icon_cache_kb,

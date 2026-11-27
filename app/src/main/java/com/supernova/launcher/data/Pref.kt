@@ -173,6 +173,7 @@ object Pref {
     val widgetMemorySaver = bool("widget_memory_saver")
     val iconCacheKb = int("icon_cache_kb", 0..ICON_CACHE_KB_MAX)
     val vitalsCpu = bool("vitals_cpu")
+    val vitalsRefreshSec = int("vitals_refresh_sec", VitalsMath.REFRESH_MIN_SEC..VitalsMath.REFRESH_MAX_SEC)
     // The drawer's fast scroller on the left, for a left thumb.
     val leftHanded = bool("left_handed")
     // Start the drawer list lower, in the thumb's half.

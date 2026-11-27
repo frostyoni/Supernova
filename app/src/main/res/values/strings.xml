@@ -832,6 +832,9 @@
     <string name="widget_memory_saver_summary">Trim hidden widget hosts on memory pressure; disable for high-spec devices</string>
     <string name="vitals_cpu">CPU graph in system vitals</string>
     <string name="vitals_cpu_summary">Adds the optional CPU sparkline to the Vitals widget</string>
+    <string name="vitals_refresh">Vitals refresh interval</string>
+    <string name="vitals_refresh_summary">How often the Device status widget samples CPU, temperature and memory while visible</string>
+    <string name="vitals_seconds">%1$d s</string>
     <string name="native_widget_row_subtitle">Home widget</string>
     <string name="native_widget_device_status">Device status</string>
     <string name="vitals_temp">Temp</string>

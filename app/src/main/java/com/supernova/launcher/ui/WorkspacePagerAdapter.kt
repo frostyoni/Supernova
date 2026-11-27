@@ -376,7 +376,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
             "${prefs.showLabels}|${prefs.subgrid}|${prefs.desktopPaddingH},${prefs.desktopPaddingV}|" +
                     "${prefs.widgetPadding},${prefs.widgetCornerRadius}|" +
                     "${prefs.widgetBorderWidth},${prefs.widgetBorderColor}," +
-                    "${prefs.widgetShadow},${prefs.widgetShadowColor},${prefs.vitalsCpu}|" +
+                    "${prefs.widgetShadow},${prefs.widgetShadowColor},${prefs.vitalsCpu},${prefs.vitalsRefreshSec}|" +
             "${prefs.labelSize},${prefs.labelColor},${prefs.labelShadow},${prefs.labelFont},${prefs.labelSingleLine}|" +
             "${prefs.iconSwipeIndicator}|" +
             // A rotation changes the padding and the cell arithmetic below,
