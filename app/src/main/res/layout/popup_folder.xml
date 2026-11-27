@@ -43,6 +43,7 @@
                 android:layout_width="18dp"
                 android:layout_height="18dp"
                 android:layout_marginStart="@dimen/space_sm"
+                android:layout_marginTop="@dimen/space_xs"
                 android:importantForAccessibility="no"
                 android:src="@drawable/ic_folder"
                 android:visibility="gone"

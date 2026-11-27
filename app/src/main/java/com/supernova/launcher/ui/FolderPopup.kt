@@ -15,6 +15,7 @@ import android.widget.PopupWindow
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
+import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.GridLayoutManager
 import com.supernova.launcher.data.LauncherItem
 import com.supernova.launcher.databinding.PopupFolderBinding
@@ -91,6 +92,10 @@ class FolderPopup(private val context: Context) {
 
         val binding = PopupFolderBinding.inflate(LayoutInflater.from(context))
         binding.folderTitle.setText(title)
+        var titleDirty = false
+        binding.folderTitle.doAfterTextChanged { text ->
+            if (text?.toString() != title) titleDirty = true
+        }
 
         if (cornerRadiiDp != null) {
             // Style-engine corners replace the stock drawable outright.
@@ -332,7 +337,7 @@ class FolderPopup(private val context: Context) {
 
         popup.setOnDismissListener {
             val newName = binding.folderTitle.text?.toString().orEmpty()
-            if (newName.isNotBlank() && newName != title) onRename(newName)
+            if (titleDirty && newName.isNotBlank() && newName != title) onRename(newName)
             onDismiss?.invoke()
         }
 

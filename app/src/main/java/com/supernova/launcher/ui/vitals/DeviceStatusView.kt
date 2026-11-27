@@ -169,6 +169,7 @@ class DeviceStatusView(
         canvas.drawText("${snapshot.batteryPercent}%", centerX, centerY, boldPaint)
         textPaint.color = mutedColor
         textPaint.textSize = sp(9f)
+        textPaint.textAlign = Paint.Align.CENTER
         val time = if (snapshot.charging) {
             VitalsMath.formatChargeTime(snapshot.chargeTimeMs)?.let { context.getString(R.string.vitals_full_in, it) }
                 ?: context.getString(R.string.vitals_charging)
@@ -185,9 +186,9 @@ class DeviceStatusView(
         val right = w - padding
         val left = if (compact) ringRect.right + dp(8f) else ringRect.right + dp(12f)
         val barsLeft = if (compact) padding else left
-        val barsTop = if (compact) ringRect.bottom + dp(6f) else h - padding - dp(34f)
+        val barsTop = if (compact) ringRect.bottom + dp(12f) else h - padding - dp(38f)
         val graphTop = padding + dp(1f)
-        val graphBottom = if (compact) ringRect.bottom else barsTop - dp(6f)
+        val graphBottom = if (compact) ringRect.bottom else barsTop - dp(10f)
         val graphHeight = max(dp(26f), graphBottom - graphTop)
         val tempValue = VitalsMath.formatTemp(snapshot.batteryTempC)
         if (expanded) {
@@ -212,6 +213,11 @@ class DeviceStatusView(
                 canvas, RectF(left, graphTop, right, graphTop + graphHeight),
                 history.temperature(), stateColor, tempValue, context.getString(R.string.vitals_temp)
             )
+        }
+        if (compact && h < dp(140f)) {
+            memoryRect.setEmpty()
+            storageRect.setEmpty()
+            return
         }
         memoryRect.set(barsLeft, barsTop, right, barsTop + dp(13f))
         storageRect.set(barsLeft, barsTop + dp(21f), right, barsTop + dp(34f))

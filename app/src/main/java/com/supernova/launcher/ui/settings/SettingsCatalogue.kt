@@ -467,6 +467,11 @@ object SettingsCatalogue {
                     subtitle = { context.getString(R.string.grid_value, it.gridRows, it.gridCols) },
                     onClick = actions.pickDesktopGrid
                 ),
+                SettingItem.Toggle(
+                    R.string.subgrid,
+                    get = { it.subgrid },
+                    set = { viewModel.set(Pref.subgrid, it) }
+                ),
                 barPageLink(R.string.desktop_search_bar) {
                     EnumLabels.of(SearchBarPlacement.fromName(SearchBarPrefs.desktopBar(it).placement))
                 },
