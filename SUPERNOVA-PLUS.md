@@ -99,8 +99,8 @@ edges known · **dropped** = considered and deliberately not done.
   a light haptic, reduced-motion and animation-speed aware, rapid-swipe safe,
   accessible next/previous actions), long-press to add another, and a **Manage
   stack** sheet listing every member in order (move up/down, remove with the
-  widget id released, add, front marked). A member that scrolls sideways itself
-  keeps the touch stream. Stored as the primary widget plus `widgetStack`
+  widget id released, add, front marked). Stack swipes always win; a widget's
+  own horizontal scrolling is not available inside a stack. Stored as the primary widget plus `widgetStack`
   members; restore, orphan sweep, page signature and backups all know about
   them. The front is kept on its own widget across reorder/remove, unbound
   restores and missing providers; duplicate widget ids are rejected; app
@@ -113,12 +113,17 @@ edges known · **dropped** = considered and deliberately not done.
   to override corner radius, border width/color, shadow, shadow color, and
   padding for that cell alone; **Reset** returns it to the global settings.
   Colors open the normal color picker, not a hex field.
-- **Device status** — *new*. A native Vitals widget in the Supernova picker group:
-  battery ring with charge time, temperature sparkline, memory and storage,
-  uptime, and an optional CPU sparkline (Labs → CPU graph). 2×2 and 4×2 layouts,
-  theme accent with normal/warm/critical colouring, fade-down graph fills, live
-  updates while attached, and per-widget style/padding. Tap the ring for battery,
-  the bars for device care; long-press for the launcher menu.
+- **Device status** — *experimental*. A native Vitals widget in the Supernova
+  picker group: battery ring with charge time, temperature sparkline, memory and
+  storage, and an optional CPU sparkline (Labs → CPU graph). Defaults to
+  **4×2** with a 4×2 minimum; wider placements use the expanded layout. Theme
+  accent with normal/warm/critical colouring, fade-down graph fills, persisted
+  history, configurable refresh, and per-widget style/padding. Tap the ring for
+  battery, the bars for device care; long-press for the launcher menu. CPU uses
+  the readable cpufreq counters where `/proc/stat` is blocked.
+- **Home Uninstall row** — *stable, off by default*. An app's home/folder menu
+  can carry **Uninstall** from Settings → Popups → Popup menu rows; it follows
+  the Home popup row set instead of being forced on.
 - **Pop-up widget** — *stable*. A home icon can carry a widget it peeks at on a
   swipe: a card opens at the icon — above it, below when there is no room above,
   beside it in landscape — holding the widget itself, so its taps and scrolling
@@ -210,7 +215,8 @@ edges known · **dropped** = considered and deliberately not done.
 ## Known limits
 
 - Widget stacks: removing an app's last widget removes the whole stack; cards and
-  drag-to-stack are not in; the Manage sheet uses arrows, not drag.
+  drag-to-stack are not in; the Manage sheet uses arrows, not drag. A member that
+  scrolls horizontally cannot scroll inside the stack — the stack swipe wins.
 - Liquid glass: an approximation on Android 13+ (no wallpaper pixels), dock only.
 - Custom transitions: the builder's timeline is not zoomable per lane; there is no
   cross-lane drag (move a chip by retyping its lane's chip list).
