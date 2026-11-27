@@ -841,6 +841,16 @@ class WidgetController(
             },
             snapDurationMs = Animations.duration(viewModel.state.value.prefs, RESIZE_SNAP_MS),
             units = units,
+            minSpanX = if (item.nativeWidgetKind.isNotEmpty()) {
+                com.supernova.launcher.data.NativeWidgets.minSpanX(item.nativeWidgetKind) * units
+            } else {
+                1
+            },
+            minSpanY = if (item.nativeWidgetKind.isNotEmpty()) {
+                com.supernova.launcher.data.NativeWidgets.minSpanY(item.nativeWidgetKind) * units
+            } else {
+                1
+            },
             onCommit = { cellX, cellY, spanX, spanY ->
                 val state = viewModel.state.value
                 val current = state.model.items.firstOrNull { it.id == item.id }

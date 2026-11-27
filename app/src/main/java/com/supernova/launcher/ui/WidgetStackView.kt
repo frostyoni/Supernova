@@ -45,12 +45,6 @@ class WidgetStackView(
     private var downX = 0f
     private var downY = 0f
     private var tracking = false
-    // A member that scrolls sideways itself asked for the stream: the stack
-    // must not take it, or a calendar's week strip stops working.
-    private var childClaimsStream = false
-    // Whether the showing member scrolls sideways, asked once on the press:
-    // the answer cannot change mid-gesture and the tree walk is not free.
-    private var frontScrolls = false
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 9f * resources.displayMetrics.density
@@ -282,23 +276,6 @@ class WidgetStackView(
         performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
     }
 
-    // Whether the showing member scrolls sideways itself. Asked on the press,
-    // not on every move: the tree is small and the answer cannot change
-    // mid-gesture.
-    private fun frontScrollsHorizontally(): Boolean {
-        val root = children.getOrNull(frontIndex)?.hostView ?: return false
-        val pending = ArrayDeque<View>()
-        pending += root
-        while (pending.isNotEmpty()) {
-            val view = pending.removeFirst()
-            if (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1)) return true
-            if (view is ViewGroup) {
-                for (index in 0 until view.childCount) pending += view.getChildAt(index)
-            }
-        }
-        return false
-    }
-
     // Which widget is showing, as dots at the foot of the cell. Drawn over
     // the widget: one dot is cheap, and a child view there would take the
     // widget's taps.
@@ -354,15 +331,11 @@ class WidgetStackView(
                 // Claim the stream from the pager at once. Waiting for the
                 // first move lost the race to ViewPager2 on ordinary swipes,
                 // which turned the page instead of the stack.
-                childClaimsStream = false
-                frontScrolls = frontScrollsHorizontally()
-                if (children.size > 1 && !frontScrolls) {
+                if (children.size > 1) {
                     (parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(true)
                 }
             }
-            MotionEvent.ACTION_MOVE -> if (!tracking && children.size > 1 && !childClaimsStream &&
-                !frontScrolls
-            ) {
+            MotionEvent.ACTION_MOVE -> if (!tracking && children.size > 1) {
                 val dx = ev.x - downX
                 val dy = ev.y - downY
                 // Claim clearly-horizontal drags. Steeper movement is left to
@@ -391,7 +364,7 @@ class WidgetStackView(
             MotionEvent.ACTION_UP -> {
                 if (tracking && !handled && children.size > 1) {
                     val dx = ev.x - downX
-                    if (abs(dx) > width / 4) {
+                    if (abs(dx) > width * SWIPE_FRACTION) {
                         if (dx < 0) showNext() else showPrevious()
                     }
                 }
@@ -400,14 +373,6 @@ class WidgetStackView(
             MotionEvent.ACTION_CANCEL -> tracking = false
         }
         return handled || tracking || super.onTouchEvent(ev)
-    }
-
-    // A member asking for the stream gets it: the stack stops claiming
-    // horizontal moves for this gesture, and the request goes on up so the
-    // page pager leaves it alone too.
-    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
-        if (disallowIntercept && frontScrolls) childClaimsStream = true
-        super.requestDisallowInterceptTouchEvent(disallowIntercept)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -469,6 +434,7 @@ class WidgetStackView(
         private const val SWITCH_ANIMATION_MS = 150L
         private const val HORIZONTAL_DOMINANCE = 1.5f
         private const val SLIDE_FRACTION = 0.22f
+        private const val SWIPE_FRACTION = 0.12f
         private const val MAX_DOTS = 7
         private const val PILL_COLOR = 0x33000000
         private const val ACTIVE_DOT = 0xFFFFFFFF.toInt()

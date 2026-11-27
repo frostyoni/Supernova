@@ -131,7 +131,7 @@ class DeviceStatusView(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        expanded = w.toFloat() / h.coerceAtLeast(1) >= 1.55f
+        expanded = item.spanX >= 4 || w.toFloat() / h.coerceAtLeast(1) >= 1.55f
         if (w > 0 && h > 0) post { sample() }
     }
 

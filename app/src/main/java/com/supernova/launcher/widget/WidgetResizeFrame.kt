@@ -24,6 +24,7 @@ import kotlin.math.roundToInt
 // The frame stays up through that rebind, for the next drag: the page keeps
 // it, and the activity anchors it to the widget's new view and cells until
 // it is dismissed.
+@Suppress("LongParameterList")
 class WidgetResizeFrame(
     context: Context,
     // The widget it frames; a rebind finds the widget's new view by it.
@@ -38,6 +39,8 @@ class WidgetResizeFrame(
     // cells. cellX, spanX and the rest, and what roomProvider and onCommit
     // are handed, all count these steps.
     private val units: Int = 1,
+    private val minSpanX: Int = MIN_SPAN,
+    private val minSpanY: Int = MIN_SPAN,
     private val onCommit: (cellX: Int, cellY: Int, spanX: Int, spanY: Int) -> Unit
 ) : View(context) {
 
@@ -201,18 +204,18 @@ class WidgetResizeFrame(
         var newCellX = cellX
         var newSpanX = spanX
         if (dragRight) {
-            newSpanX = (startSpanX + cellsX).coerceIn(MIN_SPAN, startSpanX + room.right)
+            newSpanX = (startSpanX + cellsX).coerceIn(minSpanX, startSpanX + room.right)
         } else if (dragLeft) {
-            newSpanX = (startSpanX - cellsX).coerceIn(MIN_SPAN, startSpanX + room.left)
+            newSpanX = (startSpanX - cellsX).coerceIn(minSpanX, startSpanX + room.left)
             newCellX = startCellX + (startSpanX - newSpanX)
         }
 
         var newCellY = cellY
         var newSpanY = spanY
         if (dragBottom) {
-            newSpanY = (startSpanY + cellsY).coerceIn(MIN_SPAN, startSpanY + room.bottom)
+            newSpanY = (startSpanY + cellsY).coerceIn(minSpanY, startSpanY + room.bottom)
         } else if (dragTop) {
-            newSpanY = (startSpanY - cellsY).coerceIn(MIN_SPAN, startSpanY + room.top)
+            newSpanY = (startSpanY - cellsY).coerceIn(minSpanY, startSpanY + room.top)
             newCellY = startCellY + (startSpanY - newSpanY)
         }
 

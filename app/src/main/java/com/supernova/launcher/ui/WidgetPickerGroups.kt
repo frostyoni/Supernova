@@ -50,7 +50,11 @@ sealed interface ShortcutTarget {
     object Activities : ShortcutTarget
 
     // A widget drawn by the launcher itself, placed on the workspace.
-    data class NativeWidget(val kind: String, val spanX: Int = 2, val spanY: Int = 2) : ShortcutTarget
+    data class NativeWidget(
+        val kind: String,
+        val spanX: Int = NativeWidgets.defaultSpanX(kind),
+        val spanY: Int = NativeWidgets.defaultSpanY(kind)
+    ) : ShortcutTarget
 }
 
 sealed interface WidgetPickerEntry {
