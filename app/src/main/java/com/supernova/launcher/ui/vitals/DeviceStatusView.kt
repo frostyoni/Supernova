@@ -217,11 +217,11 @@ class DeviceStatusView(
         storageRect.set(barsLeft, barsTop + dp(21f), right, barsTop + dp(34f))
         drawBar(
             canvas, memoryRect, context.getString(R.string.vitals_memory),
-            displayMemory, "${snapshot.memoryUsed / GB}/${snapshot.memoryTotal / GB} GB", accent
+            displayMemory / 100f, "${snapshot.memoryUsed / GB}/${snapshot.memoryTotal / GB} GB", accent
         )
         drawBar(
             canvas, storageRect, context.getString(R.string.vitals_storage),
-            displayStorage, "${snapshot.storageUsed / GB}/${snapshot.storageTotal / GB} GB", accent
+            displayStorage / 100f, "${snapshot.storageUsed / GB}/${snapshot.storageTotal / GB} GB", accent
         )
     }
 
@@ -243,7 +243,7 @@ class DeviceStatusView(
         textPaint.color = mutedColor
         textPaint.textSize = sp(8f)
         textPaint.textAlign = Paint.Align.LEFT
-        if (rect.width() >= dp(82f)) canvas.drawText(label, rect.left, rect.top + sp(9f), textPaint)
+        if (rect.width() >= dp(70f)) canvas.drawText(label, rect.left, rect.top + sp(9f), textPaint)
         textPaint.textAlign = Paint.Align.RIGHT
         canvas.drawText(value, rect.right, rect.top + sp(9f), textPaint)
         val graphTop = rect.top + sp(12f)
