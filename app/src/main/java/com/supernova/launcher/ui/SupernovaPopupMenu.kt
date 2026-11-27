@@ -48,10 +48,10 @@ object PopupRows {
 
     // HIDE only makes sense in the drawer (the workspace has Remove).
     val homeChoices = listOf(
-        PopupExtraRow.PLAY_STORE, PopupExtraRow.CLOSE_APP,
+        PopupExtraRow.UNINSTALL, PopupExtraRow.PLAY_STORE, PopupExtraRow.CLOSE_APP,
         PopupExtraRow.RELAUNCH, PopupExtraRow.SAVE_APK
     )
-    val drawerChoices = listOf(PopupExtraRow.HIDE, PopupExtraRow.UNINSTALL) + homeChoices
+    val drawerChoices = listOf(PopupExtraRow.HIDE) + homeChoices
 
     // Defaults reproduce the pre-phase-6 menus: the drawer had a Hide row,
     // the workspace menu had no extras.

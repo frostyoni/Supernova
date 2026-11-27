@@ -3533,6 +3533,9 @@ class LauncherActivity :
     }
 
     private fun addExtraRows(menu: SupernovaPopupMenu, extras: Set<PopupExtraRow>, app: LaunchableApp) {
+        if (PopupExtraRow.UNINSTALL in extras) {
+            addUninstallRow(menu, app.packageName, app.userSerial)
+        }
         // Opens the app's market:// page, which any installed store can
         // take, so the row names no store.
         if (PopupExtraRow.PLAY_STORE in extras) {
@@ -3671,9 +3674,6 @@ class LauncherActivity :
         }
         menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
             viewModel.appCatalog().openAppInfo(app.packageName, app.className, app.userSerial)
-        }
-        if (PopupExtraRow.UNINSTALL in extras) {
-            addUninstallRow(menu, app.packageName, app.userSerial)
         }
         menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
             source?.dismiss()
@@ -3978,7 +3978,6 @@ class LauncherActivity :
                     menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
                         viewModel.appCatalog().openAppInfo(pkg, item.className, item.userSerial)
                     }
-                    if (item.itemType == ItemType.APP) addUninstallRow(menu, pkg, item.userSerial)
                 }
                 menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
                     showItemEditSheet(item, allowSwipe = !locked)
@@ -4600,7 +4599,6 @@ class LauncherActivity :
             menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
                 viewModel.appCatalog().openAppInfo(pkg, member.className, member.userSerial)
             }
-            if (member.itemType == ItemType.APP) addUninstallRow(menu, pkg, member.userSerial)
         }
         menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
             // The folder closes first: as a focusable window it
