@@ -51,6 +51,7 @@ import com.supernova.launcher.widget.SupernovaWidgetHost
 import com.supernova.launcher.widget.SupernovaWidgetHostView
 import com.supernova.launcher.widget.hasScrollableContent
 import com.supernova.launcher.widget.WidgetFeatures
+import com.supernova.launcher.widget.WidgetHostRestore
 import com.supernova.launcher.widget.WidgetResizeFrame
 import com.supernova.launcher.widget.WidgetSizing
 import kotlinx.coroutines.flow.first
@@ -126,7 +127,7 @@ class WidgetController(
 
     // The removal is final (no Undo, or the Undo bar went): the host id goes,
     // and so do its cached view and size. One left behind by a recreate or a
-    // process death in between is reclaimed by sweepOrphanIds.
+    // process death in between is reclaimed by the start-up sweep.
     fun releaseWidget(item: LauncherItem) {
         nativeWidgetViews.remove(item.id)
         val ids = listOfNotNull(item.appWidgetId, item.popupWidget?.appWidgetId) +
@@ -249,6 +250,10 @@ class WidgetController(
 
     // From a press on that frame's edge to its lift. See trackResizeDrag.
     private var resizeDragActive = false
+    // The placement grid while a handle is dragged (#377): the same cell
+    // sparkles and target outline a live drag shows, on the framed widget's
+    // page, with the outline on the cells the resize has snapped to.
+    private val resizeGrid = DragGridOverlay { viewModel.state.value.prefs }
     // A press on the framed widget, until it moves or lifts.
     private var pressOnFramedWidget = false
     private var pressStartX = 0f
@@ -320,10 +325,19 @@ class WidgetController(
         registry.registerSavedStateProvider(PENDING_WIDGET_STATE) { pendingWidget?.toBundle() ?: Bundle() }
     }
 
-    // Reclaims host ids leaked by any interrupted add flow or by uninstall-driven
-    // item removal; deleting an already-deleted id is a no-op.
-    fun sweepOrphanIds() {
+    // Start-up widget bookkeeping, in this order because the first step is
+    // what makes the second safe.
+    //
+    // 1. Ids Android's own restore re-bound for us are adopted into the
+    //    layout (see WidgetHostRestore): widgets a new-phone transfer or a
+    //    cloud restore brought back are already bound and still hold their
+    //    settings, and nothing in the layout points at them yet.
+    // 2. Host ids leaked by an interrupted add flow or by uninstall-driven
+    //    item removal are reclaimed. Deleting an already-deleted id is a
+    //    no-op. Run before step 1 this would delete the restored widgets.
+    fun adoptRestoredIdsAndSweep() {
         activity.lifecycleScope.launch {
+            adoptHostRestoredIds()
             val referenced = viewModel.persistedWidgetIds() ?: return@launch
             appWidgetHost.appWidgetIds
                 .filter { it !in referenced && it != pendingWidget?.widgetId && it !in reboundIds }
@@ -333,6 +347,12 @@ class WidgetController(
                     cardWidgetViews.remove(it)
                 }
         }
+    }
+
+    private suspend fun adoptHostRestoredIds() {
+        val oldToNew = WidgetHostRestore.pending(activity)
+        if (oldToNew.isEmpty()) return
+        if (viewModel.adoptRestoredWidgetIds(oldToNew)) WidgetHostRestore.clear(activity)
     }
 
     // The resize frame's share of a touch, ahead of the swipe trackers. A press
@@ -350,10 +370,12 @@ class WidgetController(
                 resizeDragActive = false
                 pressOnFramedWidget = false
                 if (frame != null && !host.feedOpen) onFramePress(frame, ev, keepOnPress)
+                if (resizeDragActive && frame != null) showResizeGrid(frame, ev)
             }
             MotionEvent.ACTION_MOVE ->
                 if (resizeDragActive) {
                     frame?.dragTo(ev.rawX, ev.rawY)
+                    frame?.let { showResizeGrid(it, ev) }
                 } else if (pressOnFramedWidget && hypot(ev.rawX - pressStartX, ev.rawY - pressStartY) > touchSlop) {
                     pressOnFramedWidget = false
                     dismissResizeFrame()
@@ -362,6 +384,7 @@ class WidgetController(
                 pressOnFramedWidget = false
                 val ended = resizeDragActive
                 resizeDragActive = false
+                resizeGrid.hide(animate = true)
                 if (ended) frame?.endDrag()
                 return ended
             }
@@ -379,6 +402,15 @@ class WidgetController(
             }
             WidgetResizeFrame.Press.OUTSIDE -> if (!keepOnPress) dismissResizeFrame()
         }
+    }
+
+    // The grid on the page under the framed widget, around its canvas's
+    // cells: the sparkles brightest at the finger, the outline on the cells
+    // the frame has snapped to. Both slide to each snap in the same time, so
+    // the outline and the frame standing on it move as one.
+    private fun showResizeGrid(frame: WidgetResizeFrame, ev: MotionEvent) {
+        val canvas = frame.parent as? ViewGroup ?: return resizeGrid.hide(animate = true)
+        resizeGrid.show(canvas, frame.cellRect, ev.rawX, ev.rawY)
     }
 
     // True while the widget under the finger is handling this gesture itself.
@@ -903,6 +935,7 @@ class WidgetController(
     fun dismissResizeFrame(): Boolean {
         val frame = activeResizeFrame ?: return false
         activeResizeFrame = null
+        resizeGrid.hide(animate = true)
         (frame.parent as? ViewGroup)?.removeView(frame)
         return true
     }
