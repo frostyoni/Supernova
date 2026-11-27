@@ -59,7 +59,14 @@ object AppEditSheet {
         // folders to put the app in.
         fromDrawer: Boolean = false,
         // A placed copy of `app`: the edit is that copy's own.
-        placed: com.supernova.launcher.data.LauncherItem? = null
+        placed: com.supernova.launcher.data.LauncherItem? = null,
+        // The icon's pop-up widget: its current name (null when it has none),
+        // and the rows to choose or remove one. Only a placed app or shortcut
+        // passes these; the sheet dismisses before either opens, as the
+        // picker then has the screen to itself.
+        popupLabel: (() -> String?)? = null,
+        onEditPopup: (() -> Unit)? = null,
+        onRemovePopup: (() -> Unit)? = null
     ) {
         if (app == null && shortcut == null) return
         val binding = SheetAppEditBinding.inflate(LayoutInflater.from(context))
@@ -109,6 +116,24 @@ object AppEditSheet {
             }
             binding.swipeDownRow.setOnClickListener {
                 onEditSwipe(true) { picked -> downLabel = picked; render() }
+            }
+        }
+
+        if (popupLabel != null && onEditPopup != null) {
+            val label = popupLabel()
+            binding.popupWidgetRow.visibility = android.view.View.VISIBLE
+            binding.popupWidgetValue.text =
+                label ?: context.getString(R.string.popup_widget_none)
+            binding.popupWidgetRow.setOnClickListener {
+                dialog.dismiss()
+                onEditPopup()
+            }
+            if (label != null && onRemovePopup != null) {
+                binding.popupWidgetRemove.visibility = android.view.View.VISIBLE
+                binding.popupWidgetRemove.setOnClickListener {
+                    dialog.dismiss()
+                    onRemovePopup()
+                }
             }
         }
 

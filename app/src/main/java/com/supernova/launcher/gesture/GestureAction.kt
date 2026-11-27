@@ -37,6 +37,16 @@ enum class GestureAction {
     ASSISTANT,
     LAUNCH_APP,
     LAUNCH_SHORTCUT,
+    // An app inside the folder whose icon was swiped, by position in the
+    // folder's own order. Payload = 0-based index; with none, the first.
+    // Only offered on a placed folder's swipe rows, where the folder is the
+    // icon the finger is on, so a home gesture has nothing to open.
+    LAUNCH_FOLDER_ITEM,
+    // Pull the home down into the bottom half for a moment.
+    REACHABILITY,
+    // Peek at the widget bound to the swiped icon, in a pop-up at it. Only
+    // offered on an icon's swipe rows; the widget is chosen with it.
+    SHOW_POPUP_WIDGET,
     TOGGLE_STATUS_BAR,
     TOGGLE_DOCK,
     // Payload = 0-based page index.
@@ -142,12 +152,14 @@ object GestureDefaults {
     }
 
     // The launcher actions a gesture's picker offers. Launching an app, a
-    // shortcut or an intent come from the picker's other tabs, and a saved
-    // search only ever from a pinned search - listed here, it showed up as
-    // a second "Open search" that saved as Nothing.
+    // shortcut or an intent come from the picker's other tabs, a folder item
+    // only from the folder's own swipe rows, and a saved search only ever
+    // from a pinned search - listed here, it showed up as a second
+    // "Open search" that saved as Nothing.
     val pickerActions: List<GestureAction> = GestureAction.entries.filterNot {
         it == GestureAction.NONE || it == GestureAction.LAUNCH_APP || it == GestureAction.LAUNCH_SHORTCUT ||
-            it == GestureAction.LAUNCH_INTENT || it == GestureAction.SEARCH_QUERY
+            it == GestureAction.LAUNCH_INTENT || it == GestureAction.LAUNCH_FOLDER_ITEM ||
+            it == GestureAction.SEARCH_QUERY
     }
 
     // Whether a swipe up on the home screen pulls the drawer in, the gesture

@@ -166,7 +166,7 @@ class PrivateSpaceCard(
             // space's Lock and menu.
             showTitle = true,
             showCount = prefs.folderShowCount,
-            shadow = prefs.folderShadow,
+            look = folderLookOf(prefs, nested = false),
             animate = Animations.enabled(prefs),
             speed = Animations.factor(prefs),
             titleEditable = false,
@@ -197,7 +197,7 @@ class PrivateSpaceCard(
             showLabels = prefs.folderLabels,
             labelPrefs = prefs,
             iconScale = if (prefs.folderMatchDesktop) prefs.iconScale else prefs.folderIconScale,
-            onClick = { item ->
+            onClick = { _, item ->
                 appsById[item.id]?.let { app ->
                     if (viewModel.state.value.prefs.folderCloseOnLaunch) card?.dismiss()
                     host.launchApp(app)

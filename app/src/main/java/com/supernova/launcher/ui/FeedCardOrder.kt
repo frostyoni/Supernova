@@ -51,6 +51,7 @@ class FeedCardOrder(
             FeedOrder.MEDIA -> Pref.feedShowMedia
             FeedOrder.CALENDAR -> Pref.feedShowCalendar
             FeedOrder.CONTACTS -> Pref.feedShowContacts
+            FeedOrder.USAGE -> Pref.feedShowUsage
             else -> return
         }
         val anchor = holder.itemView

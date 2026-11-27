@@ -86,10 +86,12 @@ internal fun workspacePlacement(canvas: View, prefs: LauncherPrefs, rawX: Float,
 
 class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
+    @Suppress("TooManyFunctions")
     interface Host {
         fun state(): LauncherUiState
         fun viewForItem(item: LauncherItem): View
         fun reportWidgetSize(item: LauncherItem, view: View)
+        fun applyWidgetDecoration(view: View, item: LauncherItem)
         fun onCanvasLongPress()
         fun onCanvasTap(page: Int, cellX: Int, cellY: Int, workspaceX: Float, workspaceY: Float)
 
@@ -350,8 +352,12 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                 "${it.id}:${it.cellX},${it.cellY},${it.spanX},${it.spanY},${it.halfCells}," +
                     "${it.workspaceX},${it.workspaceY},${it.label}," +
                     "${it.swipeAction},${it.swipeActionDown},${it.swipeToOpen},${it.widgetPadding}," +
+                    "${it.nativeWidgetKind}," +
+                    "${it.widgetCornerRadius},${it.widgetBorderWidth},${it.widgetBorderColor}," +
+                    "${it.widgetShadow},${it.widgetShadowColor}," +
                     // A restored widget's new id swaps its placeholder for the real view.
                     "${it.appWidgetId}" +
+                    stackSignature(it) +
                     // Pausing work apps greys their icons.
                     PausedIcon.mark(state, it.userSerial) +
                     FolderIconDrawable.customIconKey(it) +
@@ -368,7 +374,9 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
         val prefs = state.prefs
         return "$items|$stack|${prefs.gridRows}x${prefs.gridCols}|${prefs.iconScale}|" +
             "${prefs.showLabels}|${prefs.subgrid}|${prefs.desktopPaddingH},${prefs.desktopPaddingV}|" +
-            "${prefs.widgetPadding},${prefs.widgetCornerRadius}|" +
+                    "${prefs.widgetPadding},${prefs.widgetCornerRadius}|" +
+                    "${prefs.widgetBorderWidth},${prefs.widgetBorderColor}," +
+                    "${prefs.widgetShadow},${prefs.widgetShadowColor},${prefs.vitalsCpu},${prefs.vitalsRefreshSec}|" +
             "${prefs.labelSize},${prefs.labelColor},${prefs.labelShadow},${prefs.labelFont},${prefs.labelSingleLine}|" +
             "${prefs.iconSwipeIndicator}|" +
             // A rotation changes the padding and the cell arithmetic below,
@@ -405,6 +413,11 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                     "/${it.appEdit?.hashCode()}" +
                     PausedIcon.mark(state, it.userSerial)
             }
+
+    private fun stackSignature(item: LauncherItem): String {
+        if (item.itemType != ItemType.WIDGET || item.widgetStack.isEmpty()) return ""
+        return "|" + item.widgetStack.joinToString(",") { "${it.appWidgetId}:${it.provider}:${it.userSerial}" }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
@@ -544,6 +557,7 @@ class WorkspacePagerAdapter(private val host: Host) : RecyclerView.Adapter<Recyc
                         // init).
                         // In cells, half ones included (subgrid placement).
                         val rect = WorkspaceGeometry.itemRect(item, cols, rows)
+                        host.applyWidgetDecoration(child, item)
                         val spanX = (rect.right - rect.left).coerceIn(MIN_WIDGET_SPAN, cols.toFloat())
                         val spanY = (rect.bottom - rect.top).coerceIn(MIN_WIDGET_SPAN, rows.toFloat())
                         canvas.addView(

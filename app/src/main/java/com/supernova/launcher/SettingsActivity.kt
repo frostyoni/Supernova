@@ -35,6 +35,7 @@ import com.supernova.launcher.data.CustomShapeSpec
 import com.supernova.launcher.data.DrawerGroup
 import com.supernova.launcher.data.DrawerGroupType
 import com.supernova.launcher.data.IconShape
+import com.supernova.launcher.data.LabelFontStore
 import com.supernova.launcher.data.LaunchableApp
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.LockMethod
@@ -56,6 +57,7 @@ import com.supernova.launcher.notification.SupernovaNotificationListener
 import com.supernova.launcher.ui.Animations
 import com.supernova.launcher.ui.ChoiceMenu
 import com.supernova.launcher.ui.FolderPreviewStyle
+import com.supernova.launcher.ui.LabelFont
 import com.supernova.launcher.ui.LabelStyler
 import com.supernova.launcher.ui.LauncherViewModel
 import com.supernova.launcher.ui.dp
@@ -76,7 +78,9 @@ import com.supernova.launcher.ui.theme.Styles
 import com.supernova.launcher.ui.theme.SurfaceId
 import com.supernova.launcher.ui.theme.ThemeEngine
 import com.supernova.launcher.widget.SupernovaWidgetHost
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
@@ -109,6 +113,48 @@ class SettingsActivity : AppCompatActivity() {
             photoPickCallback?.invoke(uri)
             photoPickCallback = null
         }
+
+    // The label font's file. Any document is offered, since most pickers
+    // report a .ttf or .otf as an octet stream rather than a font; the store
+    // rejects what isn't one.
+    private val pickFontLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) useCustomFont(uri)
+        }
+
+    // Copies and validates the picked file, then makes it every label's font.
+    // A file the store refuses leaves the stored one and the setting as they
+    // were, and says why.
+    private fun useCustomFont(uri: android.net.Uri) {
+        lifecycleScope.launch {
+            val name = LabelFontStore.displayName(this@SettingsActivity, uri)
+            val stored = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                LabelFontStore.store(applicationContext, uri, name)
+            }
+            when (stored) {
+                LabelFontStore.Result.STORED -> {
+                    viewModel.set(Pref.labelFont, LabelFont.CUSTOM)
+                    render()
+                }
+                LabelFontStore.Result.TOO_BIG ->
+                    Toast.makeText(this@SettingsActivity, R.string.custom_font_too_big, Toast.LENGTH_LONG).show()
+                LabelFontStore.Result.NOT_A_FONT, LabelFontStore.Result.FAILED ->
+                    Toast.makeText(this@SettingsActivity, R.string.custom_font_failed, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // Back to a system family, with the file dropped: nothing in files/ should
+    // outlive the choice that used it.
+    private fun clearCustomFont() {
+        LabelFontStore.clear(this)
+        if (viewModel.state.value.prefs.labelFont == LabelFont.CUSTOM) {
+            viewModel.set(Pref.labelFont, LabelFont.DEFAULT)
+        }
+        render()
+        Toast.makeText(this, R.string.custom_font_removed, Toast.LENGTH_SHORT).show()
+    }
+
     private lateinit var adapter: SettingsAdapter
 
     // The settings row last tapped, and so what a choice menu opens under.
@@ -522,6 +568,16 @@ class SettingsActivity : AppCompatActivity() {
             },
             pickIconPack = ::showIconPackPicker,
             pickIconShape = ::showIconShapePicker,
+            // */* with the font types: many pickers give a font no font type.
+            pickCustomFont = {
+                pickFontLauncher.launch(
+                    arrayOf(
+                        "font/ttf", "font/otf", "application/x-font-ttf",
+                        "application/vnd.ms-opentype", "*/*"
+                    )
+                )
+            },
+            clearCustomFont = ::clearCustomFont,
             resetCustomIcons = ::confirmResetCustomIcons,
             resetHiddenLabels = ::confirmResetHiddenLabels,
             exportIcons = { exportIconsLauncher.launch("supernova-icons.zip") },
@@ -771,11 +827,12 @@ class SettingsActivity : AppCompatActivity() {
     // over the theme background, else the styled surface lifted toward white
     // (a lot on a light one, a touch on a dark one).
     private fun applySettingsSurface(prefs: LauncherPrefs) {
-        val surface = Styles.resolve(this, prefs).of(SurfaceId.SETTINGS).surface
+        val resolved = Styles.resolve(this, prefs).of(SurfaceId.SETTINGS)
+        val surface = resolved.surface
+        pageSurface = surface
         binding.root.setBackgroundColor(surface)
         // The clock sits on this background: dark icons on a light one, like
-        // a yellow Background in dark mode (#281). The navigation bar sits on
-        // the unstyled tab bar and keeps the theme's.
+        // a yellow Background in dark mode (#281).
         WindowCompat.getInsetsController(window, binding.root).isAppearanceLightStatusBars =
             androidx.core.graphics.ColorUtils.calculateLuminance(surface or OPAQUE) > HALF
         groupCards.cardColor = when {
@@ -793,6 +850,44 @@ class SettingsActivity : AppCompatActivity() {
         )
         binding.settingsRecycler.invalidateItemDecorations()
         groupsPane?.cardColor = groupCards.cardColor
+        styleTabBar(surface, resolved.text)
+    }
+
+    // The page colour the navigation bar sits on where the tab bar is hidden.
+    private var pageSurface = 0
+
+    // The theme's tab colours, kept for the selected tab's accent.
+    private val themeTabColors by lazy { binding.tabSettings.textColors }
+
+    // The Settings/Style bar takes the settings colours too (#364): a
+    // styled background gives it the cards' shade, and the tab that isn't
+    // current the settings text. Unstyled, it keeps the theme's own shade.
+    private fun styleTabBar(surface: Int, text: Int) {
+        val plate = if (surface == getColor(R.color.background)) getColor(R.color.settingsNav) else groupCards.cardColor
+        ((binding.settingsTabs.background?.mutate() as? android.graphics.drawable.LayerDrawable)
+            ?.getDrawable(0) as? android.graphics.drawable.GradientDrawable)?.setColor(plate)
+        val selected = themeTabColors.getColorForState(intArrayOf(android.R.attr.state_selected), 0)
+        val idle = androidx.core.graphics.ColorUtils.setAlphaComponent(text, TAB_TEXT_ALPHA)
+        val colors = android.content.res.ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_selected), intArrayOf()),
+            intArrayOf(selected, idle)
+        )
+        for (tab in listOf(binding.tabSettings, binding.tabStyle)) {
+            tab.setTextColor(colors)
+            androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(tab, colors)
+        }
+        tabPlate = plate
+        applyNavButtons()
+    }
+
+    private var tabPlate = 0
+
+    // The navigation buttons read against what they sit on: the tab bar on
+    // the two root lists, the page on a section (#364).
+    private fun applyNavButtons() {
+        val under = if (binding.settingsTabs.isVisible) tabPlate else pageSurface
+        WindowCompat.getInsetsController(window, binding.root).isAppearanceLightNavigationBars =
+            androidx.core.graphics.ColorUtils.calculateLuminance(under or OPAQUE) > HALF
     }
 
     override fun onResume() {
@@ -968,7 +1063,7 @@ class SettingsActivity : AppCompatActivity() {
         adapter.submit(items, viewModel.state.value.prefs, page = section?.title ?: 0, tiled = section == null)
     }
 
-    // The root list, grouped: Set as default launcher on a card of its own,
+    // The root list, grouped: Default launcher on a card of its own,
     // then the sections in three labelled cards. A section no group names
     // (a new one) joins the last card, so it is never lost from the list.
     private fun rootItems(): List<SettingItem> {
@@ -992,7 +1087,7 @@ class SettingsActivity : AppCompatActivity() {
         return buildList {
             add(
                 SettingItem.SectionLink(
-                    R.string.set_default_launcher,
+                    R.string.default_launcher,
                     icon = R.drawable.ic_settings_default,
                     subtitle = { defaultLauncherLabel() },
                     onClick = {
@@ -1031,7 +1126,7 @@ class SettingsActivity : AppCompatActivity() {
     // restart from outside, so the root list offers it directly.
     private fun restartLink(): SettingItem.SectionLink =
         SettingItem.SectionLink(
-            R.string.restart_supernova,
+            R.string.restart_link,
             icon = R.drawable.ic_settings_restart,
             subtitle = { getString(R.string.restart_supernova_subtitle) },
             onClick = ::confirmRestart
@@ -1066,6 +1161,7 @@ class SettingsActivity : AppCompatActivity() {
         if (binding.settingsTabs.isVisible != root) {
             binding.settingsTabs.isVisible = root
             ViewCompat.requestApplyInsets(binding.root)
+            applyNavButtons()
         }
         // A page opened from the main list takes the keyboard down, whether
         // or not the pill still holds focus (a tap on a row can take it
@@ -1426,6 +1522,9 @@ class SettingsActivity : AppCompatActivity() {
                     payload = "${pick.app.packageName}|${pick.shortcutId}@${pick.app.userSerial}",
                     label = pick.label
                 )
+                // Only a folder's own swipe rows offer this: there is no
+                // folder for a gesture to open an item of.
+                is com.supernova.launcher.ui.ActionPick.FolderItem -> return@show
                 is com.supernova.launcher.ui.ActionPick.Legacy -> {
                     pendingGestureShortcut = gesture
                     runLogged("open shortcut creator") {
@@ -1838,9 +1937,12 @@ class SettingsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             runLogged("share backup") {
                 val payload = viewModel.exportBackup()
-                val dir = java.io.File(cacheDir, "share").apply { mkdirs() }
+                val dir = java.io.File(cacheDir, "share")
                 val file = java.io.File(dir, "backup-${System.currentTimeMillis()}.json")
-                file.writeText(payload)
+                withContext(Dispatchers.IO) {
+                    dir.mkdirs()
+                    file.writeText(payload)
+                }
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     this@SettingsActivity, "$packageName.fileprovider", file
                 )
@@ -2501,6 +2603,7 @@ class SettingsActivity : AppCompatActivity() {
         // white they are lifted from it, light or dark.
         private const val OPAQUE = 0xFF000000.toInt()
         private const val HALF = 0.5
+        private const val TAB_TEXT_ALPHA = 0xB3
         private const val CARD_LIFT_LIGHT = 0.7f
         private const val CARD_LIFT_DARK = 0.06f
         // The icon pack sheet: its rows' text inset, the preview icons, and

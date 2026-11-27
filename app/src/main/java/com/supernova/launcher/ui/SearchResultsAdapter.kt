@@ -17,7 +17,6 @@ import com.supernova.launcher.data.LaunchableApp
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.databinding.ItemDrawerAppBinding
 import com.supernova.launcher.databinding.ItemSearchCalcBinding
-import com.supernova.launcher.databinding.ItemSearchDividerBinding
 import com.supernova.launcher.databinding.ItemSearchHeaderBinding
 import com.supernova.launcher.databinding.ItemSearchRowBinding
 import com.supernova.launcher.databinding.ItemSearchTopHitBinding
@@ -25,19 +24,24 @@ import com.supernova.launcher.search.SearchChip
 import com.supernova.launcher.search.SearchResult
 import kotlin.math.roundToInt
 
-// The search window's list. Empty query: suggested-shortcut
-// pills, the recently opened apps, a hairline, then the drawer's folders and
-// every app as a grid. With a query: a calculation, the top hit as a card (its shortcuts as
-// pills), the other app matches as grid tiles with the matched letters
-// bold, then cards/folders/shortcuts/contacts rows, and always
-// "Search with" and the provider marks at the end. Queries produce small
-// lists, so every submit is a full rebind (the item animator is off).
+// The search window's list. Empty query: recent searches, suggested-shortcut
+// pills and the recently opened apps in one row - deliberately not the
+// drawer's app list, which is a swipe away. With a query: a calculation, the
+// top hit as a card (its shortcuts as pills), the other app matches as grid
+// tiles with the matched letters bold, then cards/folders/shortcuts/contacts
+// rows, and always "Search with" and the provider marks at the end. Queries
+// produce small lists, so every submit is a full rebind (the item animator is
+// off).
 class SearchResultsAdapter(
     private val appCatalog: AppCatalog,
     private val callbacks: Callbacks,
     // The serials of the paused work profiles, whose apps show greyed.
     private val pausedProfiles: () -> Set<Long> = { emptySet() }
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    // The top hit the sheet last rose into place. Slower providers re-submit
+    // the same one; only a new answer animates.
+    private var lastTopKey: List<Any>? = null
 
     private fun iconFor(app: LaunchableApp) =
         PausedIcon.of(appCatalog.iconFor(app), app.userSerial in pausedProfiles())
@@ -76,13 +80,8 @@ class SearchResultsAdapter(
         data class Header(@StringRes val title: Int) : Row
         data class Frequent(val apps: List<LaunchableApp>) : Row
         data class Shortcuts(val pills: List<SuggestedShortcuts.Pill>) : Row
-        object Divider : Row
-        // Tiles; each app carries the matched ranges to embolden (none in
-        // the zero state's list, which leads with the drawer's folders).
-        data class AppGrid(
-            val apps: List<SearchResult.App>,
-            val folders: List<SearchResult.Folder> = emptyList()
-        ) : Row
+        // Tiles, each app carrying the ranges to embolden.
+        data class AppGrid(val apps: List<SearchResult.App>) : Row
         data class Top(val hit: TopHit) : Row
         data class ProviderIcons(val query: String) : Row
         object RecentHeader : Row
@@ -148,7 +147,6 @@ class SearchResultsAdapter(
         is Row.Header -> "header/${row.title}"
         is Row.Frequent -> "frequent"
         is Row.Shortcuts -> "suggested"
-        Row.Divider -> "divider"
         is Row.AppGrid -> "grid"
         is Row.Top -> "top"
         is Row.ProviderIcons -> "providers"
@@ -228,8 +226,6 @@ class SearchResultsAdapter(
     fun submitZeroState(
         shortcuts: List<SuggestedShortcuts.Pill>,
         frequentApps: List<LaunchableApp>,
-        allApps: List<LaunchableApp>,
-        folders: List<SearchResult.Folder> = emptyList(),
         recents: List<String> = emptyList()
     ) {
         rows.clear()
@@ -239,10 +235,6 @@ class SearchResultsAdapter(
         }
         if (shortcuts.isNotEmpty()) rows.add(Row.Shortcuts(shortcuts))
         if (frequentApps.isNotEmpty()) rows.add(Row.Frequent(frequentApps))
-        if (allApps.isNotEmpty() || folders.isNotEmpty()) {
-            rows.add(Row.Divider)
-            rows.add(Row.AppGrid(allApps.map { SearchResult.App(it) }, folders))
-        }
         notifyRowsChanged()
     }
 
@@ -252,7 +244,6 @@ class SearchResultsAdapter(
         is Row.Header -> TYPE_HEADER
         is Row.Frequent -> TYPE_FREQUENT
         is Row.Shortcuts -> TYPE_SHORTCUTS
-        Row.Divider -> TYPE_DIVIDER
         is Row.AppGrid -> TYPE_GRID
         is Row.Top -> TYPE_TOP
         is Row.ProviderIcons -> TYPE_PROVIDER_ICONS
@@ -282,7 +273,6 @@ class SearchResultsAdapter(
             TYPE_TOP -> TopHitHolder(ItemSearchTopHitBinding.inflate(inflater, parent, false))
             TYPE_HEADER -> HeaderHolder(ItemSearchHeaderBinding.inflate(inflater, parent, false))
             TYPE_RECENT_HEADER -> recentHeader(parent)
-            TYPE_DIVIDER -> DividerHolder(ItemSearchDividerBinding.inflate(inflater, parent, false))
             TYPE_GRID -> GridHolder(fullWidth(SearchGridView(parent.context)) as SearchGridView)
             TYPE_SHORTCUTS -> ShortcutsHolder(fullWidth(FlowLayout(parent.context).apply {
                 maxLines = 1
@@ -302,8 +292,7 @@ class SearchResultsAdapter(
             is Row.ProviderIcons -> (holder as ProviderIconsHolder).bind(row.query)
             Row.RecentHeader -> (holder as RecentHeaderHolder).bind()
             is Row.Recent -> (holder as RowHolder).bindRecent(row.query)
-            Row.Divider -> (holder as DividerHolder).bind()
-            is Row.AppGrid -> (holder as GridHolder).bind(row.apps, row.folders)
+            is Row.AppGrid -> (holder as GridHolder).bind(row.apps)
             is Row.Top -> (holder as TopHitHolder).bind(row.hit)
             is Row.Result -> when (val result = row.result) {
                 is SearchResult.Calculation -> (holder as CalcHolder).bind(result)
@@ -381,6 +370,27 @@ class SearchResultsAdapter(
             }
             // A pill dragged out was hidden for the drag.
             for (i in 0 until flow.childCount) flow.getChildAt(i).alpha = 1f
+            // A new top hit rises a little into place - the row is the answer
+            // the query was for, and the eye should land on it. The same hit
+            // re-submitted does not animate again.
+            val topKey = listOf(hit.app.userSerial, hit.app.packageName, hit.app.className)
+            if (topKey != lastTopKey) {
+                lastTopKey = topKey
+                val density = binding.root.resources.displayMetrics.density
+                binding.root.animate().cancel()
+                binding.root.translationY = 6f * density
+                binding.root.alpha = 0f
+                binding.root.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(170L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            } else {
+                binding.root.animate().cancel()
+                binding.root.translationY = 0f
+                binding.root.alpha = 1f
+            }
             val hasShortcuts = hit.shortcuts.isNotEmpty()
             binding.topHitDivider.visibility = if (hasShortcuts) View.VISIBLE else View.GONE
             flow.visibility = if (hasShortcuts) View.VISIBLE else View.GONE
@@ -389,7 +399,7 @@ class SearchResultsAdapter(
 
     // App tiles, the drawer's own cell, in a fixed-column grid.
     private inner class GridHolder(private val grid: SearchGridView) : RecyclerView.ViewHolder(grid) {
-        fun bind(apps: List<SearchResult.App>, folders: List<SearchResult.Folder>) {
+        fun bind(apps: List<SearchResult.App>) {
             grid.columns = columns
             // The drawer's side padding once it is wider than the grid's own,
             // so the tiles sit in the drawer's columns.
@@ -398,34 +408,13 @@ class SearchResultsAdapter(
             // The tiles already there are bound again rather than replaced
             // (see rowIds): one taken out from under a finger took its
             // long-press with it.
-            val count = folders.size + apps.size
+            val count = apps.size
             if (grid.childCount > count) grid.removeViews(count, grid.childCount - count)
             val inflater = LayoutInflater.from(grid.context)
             while (grid.childCount < count) grid.addView(ItemDrawerAppBinding.inflate(inflater, grid, false).root)
-            folders.forEachIndexed { index, folder ->
-                val tile = ItemDrawerAppBinding.bind(grid.getChildAt(index))
-                tile.root.alpha = 1f
-                if (folder.icon != null) {
-                    tile.appIcon.setImageDrawable(folder.icon)
-                } else {
-                    tile.appIcon.setImageResource(R.drawable.ic_folder)
-                }
-                prefs?.let {
-                    LabelStyler.apply(tile.appLabel, it, onWallpaper = false, context = LabelContext.DRAWER)
-                }
-                tile.appLabel.text = folder.label
-                tile.appLabel.setTextColor(textColor)
-                fitTile(tile)
-                tile.root.contentDescription = grid.context.getString(R.string.folder_desc, folder.label)
-                tile.root.setOnClickListener { callbacks.onFolder(folder) }
-                tile.root.setOnLongClickListener {
-                    callbacks.onFolderLongPress(it, folder)
-                    true
-                }
-            }
             apps.forEachIndexed { index, result ->
                 val app = result.app
-                val tile = ItemDrawerAppBinding.bind(grid.getChildAt(folders.size + index))
+                val tile = ItemDrawerAppBinding.bind(grid.getChildAt(index))
                 // Hidden while it was dragged.
                 tile.root.alpha = 1f
                 tile.appIcon.setImageDrawable(iconFor(app))
@@ -483,14 +472,6 @@ class SearchResultsAdapter(
         }
     }
 
-    private inner class DividerHolder(
-        private val binding: ItemSearchDividerBinding
-    ) : RecyclerView.ViewHolder(binding.root) {
-        fun bind() {
-            binding.searchDivider.setBackgroundColor((0x4D shl 24) or (textColor and 0xFFFFFF))
-        }
-    }
-
     // A matched custom card, drawn exactly as the feed draws it. The card's
     // own margins give it the same rhythm as the feed list.
     private inner class CardHolder(
@@ -539,8 +520,12 @@ class SearchResultsAdapter(
             binding.root.alpha = 1f
             ImageViewCompat.setImageTintList(binding.resultIcon, null)
             binding.resultLabel.setTextColor(textColor)
+            binding.resultApp.visibility = View.GONE
             binding.root.setOnLongClickListener(null)
             binding.root.isLongClickable = false
+            // A row reused as a web result kept the name of what it was
+            // before, which TalkBack read out.
+            binding.root.contentDescription = null
             // Contact-card action buttons from a previous bind (D4).
             val root = binding.root as ViewGroup
             (root.childCount - 1 downTo 0).forEach { index ->
@@ -554,7 +539,15 @@ class SearchResultsAdapter(
             binding.resultLabel.text = shortcut.label
             prefs?.let { LabelStyler.apply(binding.resultLabel, it, onWallpaper = false) }
             binding.resultLabel.setTextColor(textColor)
-            binding.root.contentDescription = shortcut.label
+            // Its app under the label: the same chat often comes from
+            // several apps under the same name (#361).
+            val appName = shortcut.appName?.takeIf { it.isNotBlank() }
+            binding.resultApp.text = appName
+            binding.resultApp.setTextColor(
+                androidx.core.graphics.ColorUtils.setAlphaComponent(textColor, APP_NAME_ALPHA)
+            )
+            binding.resultApp.visibility = if (appName != null) View.VISIBLE else View.GONE
+            binding.root.contentDescription = listOfNotNull(shortcut.label, appName).joinToString(", ")
             binding.root.setOnClickListener { callbacks.onShortcut(it, shortcut) }
             binding.root.setOnLongClickListener {
                 callbacks.onShortcutLongPress(it, shortcut)
@@ -752,9 +745,9 @@ class SearchResultsAdapter(
         const val TYPE_TOP = 7
         const val TYPE_GRID = 8
         const val TYPE_SHORTCUTS = 9
-        const val TYPE_DIVIDER = 10
         const val TYPE_RECENT_HEADER = 11
         // The calculator's expression, a step back from its result.
         const val CALC_EXPRESSION_ALPHA = 0xB3
+        private const val APP_NAME_ALPHA = 0xB3
     }
 }

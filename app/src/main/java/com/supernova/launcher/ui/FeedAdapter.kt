@@ -2,6 +2,7 @@ package com.supernova.launcher.ui
 
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.text.format.DateUtils
 import android.view.Gravity
@@ -15,17 +16,24 @@ import android.widget.TextView
 import androidx.core.view.isNotEmpty
 import androidx.recyclerview.widget.RecyclerView
 import com.supernova.launcher.R
+import com.supernova.launcher.data.LaunchableApp
 import com.supernova.launcher.databinding.ItemFeedAddBinding
 import com.supernova.launcher.databinding.ItemFeedCalendarBinding
 import com.supernova.launcher.databinding.ItemFeedContactsBinding
 import com.supernova.launcher.databinding.ItemFeedCustomBinding
 import com.supernova.launcher.databinding.ItemFeedEmptyBinding
 import com.supernova.launcher.databinding.ItemFeedMediaBinding
+import com.supernova.launcher.databinding.ItemFeedNotificationRowBinding
+import com.supernova.launcher.databinding.ItemFeedNotificationsBinding
+import com.supernova.launcher.databinding.ItemFeedUsageBinding
+import com.supernova.launcher.databinding.ItemFeedUsageRowBinding
 import com.supernova.launcher.feed.CalendarCardSource
 import com.supernova.launcher.feed.ContactsCardSource
 import com.supernova.launcher.feed.FeedCard
 import com.supernova.launcher.feed.FeedOrder
 import com.supernova.launcher.feed.MediaCardSource
+import com.supernova.launcher.feed.NotificationsCardSource
+import com.supernova.launcher.feed.UsageCardSource
 import com.supernova.launcher.runLogged
 
 // Renders the feed pane's card list. One view type per card kind; the list is
@@ -43,6 +51,10 @@ class FeedAdapter(
         val onGrantContacts: () -> Unit,
         val onOpenEvent: (Long) -> Unit,
         val onOpenContact: (ContactsCardSource.Starred, View) -> Unit,
+        // A usage card row: opens the app, through the launcher's own launch
+        // path. The icon comes from the catalog, resolved at bind.
+        val onOpenApp: (LaunchableApp) -> Unit,
+        val appIcon: (LaunchableApp) -> Drawable?,
         // The footer's Add card (the add sheet) and Feed settings; the empty
         // page's two kinds of card, and a ready-made card turned on by its
         // order key.
@@ -59,6 +71,9 @@ class FeedAdapter(
         class Media(val state: MediaCardSource.MediaState) : Row(FeedOrder.MEDIA, FeedOrder.Group.REST)
         class CalendarRow(val state: CalendarCardSource.CalendarState) : Row(FeedOrder.CALENDAR, FeedOrder.Group.REST)
         class Contacts(val state: ContactsCardSource.ContactsState) : Row(FeedOrder.CONTACTS, FeedOrder.Group.REST)
+        class Usage(val state: UsageCardSource.UsageState) : Row(FeedOrder.USAGE, FeedOrder.Group.REST)
+        class Notifications(val state: NotificationsCardSource.NotificationsState) :
+            Row(FeedOrder.NOTIFICATIONS, FeedOrder.Group.REST)
         class Custom(val card: FeedCard, cardGroup: FeedOrder.Group) : Row(card.id, cardGroup)
         object Footer : Row(null, null)
         // No card at all: the page explains itself. readyMade holds the
@@ -114,6 +129,8 @@ class FeedAdapter(
         is Row.Media -> TYPE_MEDIA
         is Row.CalendarRow -> TYPE_CALENDAR
         is Row.Contacts -> TYPE_CONTACTS
+        is Row.Usage -> TYPE_USAGE
+        is Row.Notifications -> TYPE_NOTIFICATIONS
         is Row.Custom -> TYPE_CUSTOM
         Row.Footer -> TYPE_ADD
         is Row.Empty -> TYPE_EMPTY
@@ -126,6 +143,8 @@ class FeedAdapter(
             TYPE_MEDIA -> MediaHolder(ItemFeedMediaBinding.inflate(inflater, parent, false))
             TYPE_CALENDAR -> CalendarHolder(ItemFeedCalendarBinding.inflate(inflater, parent, false))
             TYPE_CONTACTS -> ContactsHolder(ItemFeedContactsBinding.inflate(inflater, parent, false))
+            TYPE_USAGE -> UsageHolder(ItemFeedUsageBinding.inflate(inflater, parent, false))
+            TYPE_NOTIFICATIONS -> NotificationsHolder(ItemFeedNotificationsBinding.inflate(inflater, parent, false))
             TYPE_CUSTOM -> CustomHolder(ItemFeedCustomBinding.inflate(inflater, parent, false))
             TYPE_EMPTY -> EmptyHolder(ItemFeedEmptyBinding.inflate(inflater, parent, false))
             else -> AddHolder(ItemFeedAddBinding.inflate(inflater, parent, false))
@@ -137,6 +156,8 @@ class FeedAdapter(
             is Row.Media -> (holder as MediaHolder).bind(row.state)
             is Row.CalendarRow -> (holder as CalendarHolder).bind(row.state)
             is Row.Contacts -> (holder as ContactsHolder).bind(row.state)
+            is Row.Usage -> (holder as UsageHolder).bind(row.state)
+            is Row.Notifications -> (holder as NotificationsHolder).bind(row.state)
             is Row.Custom -> (holder as CustomHolder).bind(row.card)
             Row.Footer -> (holder as AddHolder).bind()
             is Row.Empty -> (holder as EmptyHolder).bind(row.readyMade)
@@ -145,6 +166,12 @@ class FeedAdapter(
 
     private fun tintCard(view: View) {
         (view.background?.mutate() as? GradientDrawable)?.setColor(cardColor)
+    }
+
+    // A usage bar's track or fill, in the given color.
+    private fun barDrawable(color: Int): GradientDrawable = GradientDrawable().apply {
+        cornerRadius = dp(BAR_RADIUS_DP).toFloat()
+        setColor(color)
     }
 
     private inner class MediaHolder(private val binding: ItemFeedMediaBinding) :
@@ -356,6 +383,82 @@ class FeedAdapter(
         }
     }
 
+    // Apps opened most often, from the launcher's own launch counts: icon,
+    // name, count, and a bar for the app's share of the top count. A tap
+    // opens the app.
+    private inner class UsageHolder(private val binding: ItemFeedUsageBinding) :
+        RecyclerView.ViewHolder(binding.root) {
+
+        fun bind(state: UsageCardSource.UsageState) {
+            tintCard(binding.root)
+            binding.usageHeader.setTextColor(accentColor)
+            binding.usageRows.removeAllViews()
+            val context = binding.root.context
+            val muted = (0xB3 shl 24) or (textColor and 0xFFFFFF)
+            binding.usageEmpty.setTextColor(muted)
+            binding.usageEmpty.visibility = if (state.rows.isEmpty()) View.VISIBLE else View.GONE
+            val inflater = LayoutInflater.from(context)
+            state.rows.forEach { row ->
+                val item = ItemFeedUsageRowBinding.inflate(inflater, binding.usageRows, false)
+                item.usageRowIcon.setImageDrawable(callbacks.appIcon(row.app))
+                item.usageRowLabel.text = row.app.label
+                item.usageRowLabel.setTextColor(textColor)
+                item.usageRowCount.text = context.resources.getQuantityString(
+                    R.plurals.feed_usage_launches, row.count, row.count
+                )
+                item.usageRowCount.setTextColor(muted)
+                // The bar is the row's share of the top count: the track is
+                // the whole width, the fill takes that much of it.
+                item.usageRowBar.background = barDrawable((0x33 shl 24) or (accentColor and 0xFFFFFF))
+                item.usageRowFill.layoutParams =
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                        weight = row.share
+                    }
+                item.usageRowFill.background = barDrawable(accentColor)
+                item.root.contentDescription = context.getString(R.string.feed_usage_open, row.app.label)
+                item.root.setOnClickListener { callbacks.onOpenApp(row.app) }
+                binding.usageRows.addView(item.root)
+            }
+        }
+    }
+
+    private inner class NotificationsHolder(private val binding: ItemFeedNotificationsBinding) :
+        RecyclerView.ViewHolder(binding.root) {
+
+        fun bind(state: NotificationsCardSource.NotificationsState) {
+            tintCard(binding.root)
+            binding.notificationsHeader.setTextColor(accentColor)
+            binding.notificationsRows.removeAllViews()
+            val context = binding.root.context
+            val muted = (0xB3 shl 24) or (textColor and 0xFFFFFF)
+            binding.notificationsEmpty.setTextColor(muted)
+            binding.notificationsEmpty.setText(
+                if (state.access) R.string.feed_notifications_empty
+                else R.string.feed_notifications_access_off
+            )
+            binding.notificationsEmpty.visibility =
+                if (state.rows.isEmpty()) View.VISIBLE else View.GONE
+            val inflater = LayoutInflater.from(context)
+            state.rows.forEach { row ->
+                val item = ItemFeedNotificationRowBinding.inflate(inflater, binding.notificationsRows, false)
+                item.notificationIcon.setImageDrawable(callbacks.appIcon(row.app))
+                item.notificationTitle.text = row.item.title.ifBlank { row.app.label }
+                item.notificationTitle.setTextColor(textColor)
+                item.notificationText.text = row.item.text
+                item.notificationText.setTextColor(muted)
+                item.notificationText.visibility =
+                    if (row.item.text.isBlank()) View.GONE else View.VISIBLE
+                item.root.contentDescription =
+                    context.getString(R.string.feed_notifications_open, row.app.label)
+                // The notification's own intent, as the shade would send it.
+                item.root.setOnClickListener {
+                    runCatching { row.item.contentIntent?.send() }
+                }
+                binding.notificationsRows.addView(item.root)
+            }
+        }
+    }
+
     private object CircleOutline : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
             outline.setOval(0, 0, view.width, view.height)
@@ -373,12 +476,18 @@ class FeedAdapter(
         private const val TYPE_CUSTOM = 3
         private const val TYPE_ADD = 4
         private const val TYPE_EMPTY = 5
+        private const val TYPE_USAGE = 6
+        private const val TYPE_NOTIFICATIONS = 7
+
+        // Corner radius of a usage bar.
+        private const val BAR_RADIUS_DP = 2
 
         // The ready-made cards as the empty page names them.
         val BUILT_IN_LABELS = mapOf(
             FeedOrder.MEDIA to R.string.cards_media_title,
             FeedOrder.CALENDAR to R.string.feed_calendar_title,
-            FeedOrder.CONTACTS to R.string.feed_contacts_title
+            FeedOrder.CONTACTS to R.string.feed_contacts_title,
+            FeedOrder.USAGE to R.string.feed_usage_title
         )
     }
 }

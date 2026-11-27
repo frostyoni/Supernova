@@ -206,6 +206,7 @@ class LiveDragController(
     // A drag hovering past the last page asked for a new one; once the model
     // carries it (the host's state observer), the drag is carried over to it.
     fun carryOverToNewPage() {
+        carryOverToFrontPage()
         if (pendingDragPageFlip in 0 until host.workspaceAdapter.realPageCount) {
             val page = pendingDragPageFlip
             pendingDragPageFlip = -1
@@ -221,6 +222,20 @@ class LiveDragController(
                 pager.setCurrentItem(adapter.centerPosition(page), true)
             }
         }
+    }
+
+    // The same before the first page (#376). The pages moved one along, so
+    // the pager's position shows the page that followed: back onto the old
+    // first page, now the second, then slide on to the new one.
+    private fun carryOverToFrontPage() {
+        val adapter = host.workspaceAdapter
+        if (pendingFrontPageCount < 0 || adapter.realPageCount < pendingFrontPageCount) return
+        pendingFrontPageCount = -1
+        if (!dragLayer.isDragging) return
+        val pager = binding.workspacePager
+        pager.setCurrentItem(adapter.centerPosition(1), false)
+        pager.setCurrentItem(adapter.centerPosition(0), Animations.scrollPages(viewModel.state.value.prefs))
+        pager.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
     }
 
     // Where that press landed on screen: a drag's picture is held at the
@@ -302,6 +317,9 @@ class LiveDragController(
     // A page addPage just opened for a drag past the last page; the pager
     // moves there once the adapter has it.
     private var pendingDragPageFlip = -1
+
+    // The page count that shows a page asked for before the first, or -1.
+    private var pendingFrontPageCount = -1
     private val dropZoneActions = linkedMapOf<View, (DragPayload) -> Unit>()
     private val hitLocation = IntArray(2)
 
@@ -1192,8 +1210,9 @@ class LiveDragController(
         val adapter = host.workspaceAdapter
         val next = pager.currentItem + direction
         // A drag never wraps round, infinite scroll or not: past the last
-        // page is where a new page opens (#120), and before the first is the
-        // end. Edit mode's add-page slot is not a page to flip onto either.
+        // page is where a new page opens (#120), and with infinite scroll so
+        // is before the first (#376); without it, that is the end. Edit
+        // mode's add-page slot is not a page to flip onto either.
         val page = adapter.realPage(pager.currentItem)
         val wraps = page + direction !in 0 until adapter.realPageCount
         if (!wraps && next in 0 until adapter.itemCount && !adapter.isAddPage(next)) {
@@ -1207,11 +1226,14 @@ class LiveDragController(
         // carries the drag over (observeState) and the hover then stops.
         // At the page limit addPage adds nothing, and the request, never
         // answered, used to block every later one until a restart.
-        if (direction > 0 && pendingDragPageFlip < 0 && activeDragPayload != null &&
-            host.workspaceAdapter.realPageCount < LauncherRepository.MAX_PAGES
-        ) {
-            pendingDragPageFlip = host.workspaceAdapter.realPageCount
+        val canAdd = pendingDragPageFlip < 0 && pendingFrontPageCount < 0 && activeDragPayload != null &&
+            adapter.realPageCount < LauncherRepository.MAX_PAGES
+        if (canAdd && direction > 0) {
+            pendingDragPageFlip = adapter.realPageCount
             viewModel.addPage()
+        } else if (canAdd && page == 0 && viewModel.state.value.prefs.infiniteScroll) {
+            pendingFrontPageCount = adapter.realPageCount + 1
+            viewModel.addPageFirst()
         }
         return false
     }
@@ -1542,6 +1564,8 @@ class LiveDragController(
         val duration = Animations.duration(prefs, WIGGLE_MS)
         if (duration == 0L) return
         forEachWorkspaceIcon { index, view ->
+            val rampMs = (duration.toFloat() * WIGGLE_RAMP_FRACTION).toLong().coerceAtLeast(1L)
+            var self: android.animation.ObjectAnimator? = null
             val animator = android.animation.ObjectAnimator.ofFloat(
                 view, "rotation", -WIGGLE_DEGREES, WIGGLE_DEGREES
             ).apply {
@@ -1549,7 +1573,17 @@ class LiveDragController(
                 repeatCount = android.animation.ValueAnimator.INFINITE
                 repeatMode = android.animation.ValueAnimator.REVERSE
                 startDelay = (index % 3) * (duration / 3)
+                // Ease the swing in: the first frames are a fraction of the
+                // angle, so edit mode starts rather than snapping into a full
+                // rock.
+                setEvaluator(android.animation.TypeEvaluator<Float> { fraction, start, end ->
+                    val played = ((self?.currentPlayTime ?: 0L) - (self?.startDelay ?: 0L))
+                        .coerceAtLeast(0L)
+                    val ramp = (played / rampMs.toFloat()).coerceIn(0f, 1f)
+                    (start + (end - start) * fraction) * ramp
+                })
             }
+            self = animator
             animator.start()
             wiggleAnimators += animator
         }
@@ -1595,6 +1629,7 @@ class LiveDragController(
         flipPointerId = -1
         // A page asked for during the drag no longer has a drag to carry.
         pendingDragPageFlip = -1
+        pendingFrontPageCount = -1
         val prefs = viewModel.state.value.prefs
         dragSourceView = null
         dragFromDrawer = false
@@ -1721,6 +1756,7 @@ class LiveDragController(
         // making the grid look broken.
         private const val WIGGLE_DEGREES = 2.5f
         private const val WIGGLE_MS = 140L
+        private const val WIGGLE_RAMP_FRACTION = 0.16f
 
         // Drop-zone hover tint (accent-free so it reads on any wallpaper).
         private const val DROP_ZONE_HIGHLIGHT = 0x33FFFFFF

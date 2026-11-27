@@ -5,6 +5,7 @@ import android.content.res.Resources
 import androidx.datastore.preferences.core.edit
 import com.supernova.launcher.R
 import com.supernova.launcher.runLogged
+import com.supernova.launcher.ui.LabelFont
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -341,7 +342,8 @@ class LauncherRepository(private val context: Context) {
             // land beside the target instead - the caller already ruled the
             // hover outside the folder centre zone.
             val next = when {
-                mergeFolders && target != null && target.itemType == ItemType.FOLDER && isFolderEligible(moving) ->
+                mergeFolders && target != null && target.itemType == ItemType.FOLDER &&
+                    (isFolderEligible(moving) || FolderNesting.canNest(current, moving, target)) ->
                     moveIntoFolderModel(current, moving, target.id)
                 mergeFolders && target != null && isFolderEligible(moving) && isFolderEligible(target) ->
                     createNewFolderModel(current, moving, target)
@@ -385,8 +387,18 @@ class LauncherRepository(private val context: Context) {
     suspend fun moveItemIntoFolder(itemId: String, folderId: String) {
         mutate { current ->
             val moving = current.items.firstOrNull { it.id == itemId } ?: return@mutate current
-            if (!isFolderEligible(moving)) return@mutate current
-            moveIntoFolderModel(current, moving, folderId)
+            val target = current.items.firstOrNull { it.id == folderId } ?: return@mutate current
+            if (!isFolderEligible(moving) && !FolderNesting.canNest(current, moving, target)) {
+                return@mutate current
+            }
+            val nested = moveIntoFolderModel(current, moving, folderId)
+            // Out of a folder and into another: the one it left may now be
+            // too small to stay a folder.
+            if (moving.container == ContainerType.FOLDER) {
+                withSparseFolderDissolved(nested, moving.folderId)
+            } else {
+                nested
+            }
         }
     }
 
@@ -497,6 +509,36 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    @Suppress("LongParameterList")
+    suspend fun addNativeWidget(
+        page: Int,
+        cellX: Int,
+        cellY: Int,
+        cols: Int,
+        rows: Int,
+        kind: String,
+        label: String,
+        spanX: Int = NativeWidgets.defaultSpanX(kind),
+        spanY: Int = NativeWidgets.defaultSpanY(kind)
+    ) {
+        val widget = LauncherItem(
+            id = id(),
+            itemType = ItemType.WIDGET,
+            container = ContainerType.WORKSPACE,
+            page = page,
+            cellX = cellX,
+            cellY = cellY,
+            spanX = spanX.coerceAtLeast(1),
+            spanY = spanY.coerceAtLeast(1),
+            nativeWidgetKind = kind,
+            label = label
+        )
+        mutateFitted(cols, rows) { original ->
+            val placed = resolvePlacement(original, widget, cols, rows) ?: widget
+            original.copy(items = original.items + placed)
+        }
+    }
+
     // Provider/grid constraint validation happens in the UI layer (WidgetSizing);
     // the repository enforces only occupancy and the >=1 floor. The anchor cell
     // moves along with the span when resizing from the top or left edge.
@@ -551,6 +593,26 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    suspend fun setWidgetStyle(itemId: String, style: WidgetStyle) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        item.copy(
+                            widgetCornerRadius = style.cornerRadius?.coerceIn(0, MAX_WIDGET_RADIUS_DP),
+                            widgetBorderWidth = style.borderWidth?.coerceIn(0, MAX_WIDGET_BORDER_DP),
+                            widgetBorderColor = style.borderColor?.takeIf { it.isNotBlank() },
+                            widgetShadow = style.shadow?.coerceIn(0, MAX_WIDGET_SHADOW_DP),
+                            widgetShadowColor = style.shadowColor?.takeIf { it.isNotBlank() }
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
     // Long-press > Large icon / Normal icon. Nothing changes where the
     // page has no room for it (the caller says so first).
     suspend fun setIconSize(itemId: String, large: Boolean, cols: Int, rows: Int) {
@@ -597,6 +659,25 @@ class LauncherRepository(private val context: Context) {
                 (current.items.filter { it.container == ContainerType.WORKSPACE }.maxOfOrNull { it.page } ?: -1) + 1
             )
             current.copy(pageCount = (shown + 1).coerceAtMost(MAX_PAGES))
+        }
+    }
+
+    // A new empty page before the first (#376): every page and the home page
+    // move one along. Nothing at the page limit.
+    suspend fun addPageFirst() {
+        mutate { current ->
+            val shown = maxOf(
+                current.pageCount,
+                (current.items.filter { it.container == ContainerType.WORKSPACE }.maxOfOrNull { it.page } ?: -1) + 1
+            )
+            if (shown >= MAX_PAGES) return@mutate current
+            current.copy(
+                pageCount = shown + 1,
+                defaultPage = current.defaultPage + 1,
+                items = current.items.map {
+                    if (it.container == ContainerType.WORKSPACE) it.copy(page = it.page + 1) else it
+                }
+            )
         }
     }
 
@@ -811,6 +892,207 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    // An icon's pop-up widget, once a picker has bound it: null removes it.
+    // The caller frees the host id it replaces.
+    suspend fun setPopupWidget(
+        itemId: String,
+        appWidgetId: Int?,
+        provider: String = "",
+        userSerial: Long = 0L
+    ) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId) {
+                        item.copy(
+                            popupWidget = appWidgetId?.let {
+                                WidgetStackMember(it, provider, userSerial)
+                            }
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    // The pop-up card's size, from its resize grip: null goes back to the
+    // widget's own minimum.
+    suspend fun setPopupWidgetSize(itemId: String, widthDp: Int?, heightDp: Int?) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId) {
+                        item.copy(popupWidthDp = widthDp, popupHeightDp = heightDp)
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    // A restore's fresh id for an icon's pop-up widget, as for a stack member.
+    suspend fun setPopupWidgetId(itemId: String, appWidgetId: Int) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId) {
+                        item.copy(popupWidget = item.popupWidget?.copy(appWidgetId = appWidgetId))
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    private fun canAddNewStackMember(item: LauncherItem, appWidgetId: Int): Boolean =
+        WidgetStacks.canAdd(item) &&
+            item.appWidgetId != appWidgetId &&
+            item.widgetStack.none { it.appWidgetId == appWidgetId }
+
+    private fun canRebindStackMember(item: LauncherItem, memberIndex: Int, appWidgetId: Int): Boolean =
+        memberIndex in item.widgetStack.indices &&
+            item.appWidgetId != appWidgetId &&
+            item.widgetStack.none { it.appWidgetId == appWidgetId }
+
+    // Appends a newly-bound widget to a workspace widget stack, up to the
+    // member bound. False when the stack was already full; the caller
+    // must free the unused id.
+    suspend fun addWidgetToStack(
+        itemId: String,
+        appWidgetId: Int,
+        provider: String,
+        userSerial: Long = 0L
+    ): Boolean {
+        var added = false
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET &&
+                        canAddNewStackMember(item, appWidgetId)
+                    ) {
+                        added = true
+                        item.copy(
+                            widgetStack = item.widgetStack + WidgetStackMember(appWidgetId, provider, userSerial),
+                            widgetStackFront = 0
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+        return added
+    }
+
+    // Removes the stack member at its index in the combined order, keeping
+    // the front on its own widget. Returns the id removed, if any, so the
+    // caller can release its host id.
+    suspend fun removeWidgetFromStack(itemId: String, frontIndex: Int): Int? {
+        var removedId: Int? = null
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        val order = WidgetStacks.order(item)
+                        if (frontIndex !in order.indices || frontIndex == 0) return@map item
+                        removedId = order[frontIndex].appWidgetId
+                        val next = WidgetStacks.remove(order, frontIndex)
+                        val front = WidgetStacks.frontAfterRemove(order, frontIndex, item.widgetStackFront)
+                        WidgetStacks.withOrder(item, next, front)
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+        return removedId
+    }
+
+    // Switches which widget in a stack is in front.
+    // Reorder the stack as one list, the primary included: the management
+    // sheet moves a row, and the head of the order becomes the primary.
+    suspend fun moveStackMember(itemId: String, from: Int, to: Int, front: Int = -1) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        val order = WidgetStacks.order(item)
+                        WidgetStacks.withOrder(
+                            item,
+                            WidgetStacks.move(order, from, to),
+                            if (front >= 0) front else item.widgetStackFront
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    // Remove by position in the same ordered list, returning the widget id to
+    // release. The front stays on its own widget where it still is.
+    suspend fun removeStackMemberAt(itemId: String, index: Int): Int? {
+        var removedId: Int? = null
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        val order = WidgetStacks.order(item)
+                        if (index !in order.indices) return@map item
+                        removedId = order[index].appWidgetId
+                        val next = WidgetStacks.remove(order, index)
+                        val front = WidgetStacks.frontAfterRemove(order, index, item.widgetStackFront)
+                        WidgetStacks.withOrder(item, next, front)
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+        return removedId
+    }
+
+    suspend fun setWidgetStackFront(itemId: String, frontIndex: Int) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET) {
+                        val order = WidgetStacks.order(item)
+                        item.copy(widgetStackFront = WidgetStacks.clampFront(order.size, frontIndex))
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    // Rebinds a restored stack member by replacing its placeholder id.
+    suspend fun setWidgetStackMemberId(itemId: String, memberIndex: Int, appWidgetId: Int) {
+        mutate { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.id == itemId && item.itemType == ItemType.WIDGET &&
+                        canRebindStackMember(item, memberIndex, appWidgetId)
+                    ) {
+                        item.copy(
+                            widgetStack = item.widgetStack.mapIndexed { i, member ->
+                                if (i == memberIndex) member.copy(appWidgetId = appWidgetId) else member
+                            }
+                        )
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
     // A widget bound to a card. Add card's Widget saves nothing until the
     // widget is bound, so a card that doesn't exist yet is made here, at the
     // end of the feed (a cancelled pick leaves no empty card behind), and
@@ -843,12 +1125,24 @@ class LauncherRepository(private val context: Context) {
     suspend fun writeAutoBackup(prefs: LauncherPrefs): Boolean = runLogged("write automatic backup") {
         val payload = exportBackup(prefs)
         autoBackupDir.mkdirs()
-        val written = File(autoBackupDir, "layout-${System.currentTimeMillis()}.json")
-        written.writeText(payload)
+        val stamp = System.currentTimeMillis()
+        val written = File(autoBackupDir, "layout-$stamp.json")
+        // Written aside and renamed when whole: a kill mid-write used to leave
+        // a truncated file that still listed as a restorable snapshot.
+        val partial = File(autoBackupDir, "layout-$stamp.part")
+        withContext(Dispatchers.IO) {
+            try {
+                partial.writeText(payload)
+                check(partial.renameTo(written)) { "couldn't finish the automatic backup" }
+            } catch (error: Throwable) {
+                partial.delete()
+                throw error
+            }
+        }
         // The newest by name are kept, but never at the cost of the one
         // just written: a clock set back names it older than the rest, and
         // the snapshot taken before a reset or an import must survive.
-        autoBackupDir.listFiles()
+        autoBackupDir.listFiles { file -> file.name.endsWith(".json") }
             ?.filter { it != written }
             ?.sortedByDescending { it.name }
             ?.drop(AUTO_BACKUP_KEEP - 1)
@@ -856,16 +1150,22 @@ class LauncherRepository(private val context: Context) {
     }.isSuccess
 
     fun autoBackups(): List<File> =
-        autoBackupDir.listFiles()?.sortedByDescending { it.name }.orEmpty()
+        autoBackupDir.listFiles { file -> file.name.endsWith(".json") }
+            ?.sortedByDescending { it.name }.orEmpty()
 
-    suspend fun exportBackup(prefs: LauncherPrefs): String {
+    suspend fun exportBackup(prefs: LauncherPrefs): String = withContext(Dispatchers.IO) {
         val model = modelFlow.first()
         val payload = BackupPayload(
             exportedAtEpochMs = System.currentTimeMillis(),
             model = model,
-            prefs = prefs
+            prefs = prefs,
+            customTransition = CustomTransitionStore.raw(context) ?: "",
+            customTransitionPresets = CustomTransitionStore.presetsRaw(context) ?: "",
+            // The font's bytes, so a backup restores the labels it showed
+            // rather than whatever this install happens to have.
+            customFontBase64 = withContext(Dispatchers.IO) { LabelFontStore.exportBase64(context) }
         )
-        return json.encodeToString(payload)
+        json.encodeToString(payload)
     }
 
     data class ImportResult(
@@ -915,6 +1215,20 @@ class LauncherRepository(private val context: Context) {
             prefs?.get("folderSortAz")?.jsonPrimitive?.booleanOrNull
         }.getOrNull() == true
         return if (on) payload.copy(model = FolderSort.allSorted(payload.model)) else payload
+    }
+
+    // A backup's custom font: absent (an export from before it) leaves the
+    // installed one alone, blank removes it, and bytes that don't store leave
+    // the labels on Default. Nothing here touches the prefs unless the
+    // payload carries the field.
+    private fun withCustomFont(payload: BackupPayload, prefs: LauncherPrefs): LauncherPrefs {
+        val base64 = payload.customFontBase64 ?: return prefs
+        if (base64.isBlank()) {
+            LabelFontStore.clear(context)
+            return prefs.copy(labelFont = LabelFont.DEFAULT)
+        }
+        val stored = LabelFontStore.importBase64(context, base64) == LabelFontStore.Result.STORED
+        return if (stored) prefs else prefs.copy(labelFont = LabelFont.DEFAULT)
     }
 
     // Another launcher's home screen in place of this one: its icons, folders
@@ -973,20 +1287,38 @@ class LauncherRepository(private val context: Context) {
         } else {
             payload.prefs.copy(searchBarWidgetId = 0, searchBarWidgetProvider = "")
         }
-
         // What is being replaced stays recoverable from Automatic backups, as
         // Reset's does: without that snapshot, no import. Written under the
         // lock, so no layout edit lands in between and is lost.
-        if (snapshotFirst) {
-            check(writeAutoBackup(currentPrefs)) { "couldn't save a backup of the current layout first" }
-        }
         lock.withLock {
+            // Under the lock, as the comment above has always said: a layout
+            // edit landing between the snapshot and the import was lost.
+            if (snapshotFirst) {
+                check(writeAutoBackup(currentPrefs)) { "couldn't save a backup of the current layout first" }
+            }
+            // The font goes in after that snapshot, which has to carry the one
+            // being replaced, and before the prefs that name the new one: a
+            // file that doesn't load leaves Default rather than a name with
+            // nothing behind it.
+            val fontPrefs = withCustomFont(payload, restoredPrefs)
             context.supernovaStore.edit { prefs ->
                 prefs[StoreKeys.model] = json.encodeToString(validated)
-                LauncherPreferences.writeAll(prefs, restoredPrefs)
+                LauncherPreferences.writeAll(prefs, fontPrefs)
                 prefs.remove(StoreKeys.retiredFolderSortAz)
             }
+            // The transition the home swipes with is part of the state being
+            // restored, so it comes back with the layout and the settings.
+            payload.customTransition?.let { spec ->
+                if (spec.isBlank()) CustomTransitionStore.clear(context)
+                else CustomTransitionStore.save(context, spec)
+            }
+            payload.customTransitionPresets?.let { presets ->
+                if (presets.isBlank()) CustomTransitionStore.clearPresets(context)
+                else CustomTransitionStore.restorePresets(context, presets)
+            }
         }
+        // A backup from another install comes without its shortcut pins.
+        ShortcutPins.repin(context, validated.items)
 
         return ImportResult(
             restored = validated.items.size,
@@ -1066,7 +1398,8 @@ class LauncherRepository(private val context: Context) {
             val target = mergeTarget(current, item.page, item.cellX, item.cellY, null, mergeTargetId)
 
             when {
-                mergeFolders && target != null && target.itemType == ItemType.FOLDER && isFolderEligible(item) ->
+                mergeFolders && target != null && target.itemType == ItemType.FOLDER &&
+                    (isFolderEligible(item) || FolderNesting.canNest(current, item, target)) ->
                     moveIntoFolderModel(
                         current.copy(items = current.items + item),
                         item,
@@ -1527,11 +1860,13 @@ class LauncherRepository(private val context: Context) {
                 spanX = folder.spanX,
                 spanY = folder.spanY,
                 rank = folder.rank,
-                folderId = null
+                // In the place of the folder it replaces: a nested folder's
+                // last member joins its parent rather than the home screen.
+                folderId = folder.folderId
             )
             // In the folder's place in the list too, which is its place in
             // the page's stacking.
-            return current.copy(
+            val next = current.copy(
                 items = current.items.mapNotNull {
                     when (it.id) {
                         folder.id -> last
@@ -1540,6 +1875,12 @@ class LauncherRepository(private val context: Context) {
                     }
                 }
             )
+            // A nested folder that goes away leaves its parent a member short.
+            return if (folder.container == ContainerType.FOLDER) {
+                withSparseFolderDissolved(next, folder.folderId)
+            } else {
+                next
+            }
         }
 
         private const val AUTO_BACKUP_KEEP = 5
@@ -1547,8 +1888,13 @@ class LauncherRepository(private val context: Context) {
         private const val MIN_WIDGET_SPAN = 0.5f
         // Shared with the surfaces that offer an add-page control.
         const val MAX_PAGES = 9
+        // Two widgets total per stack: the primary plus this many members.
+        const val MAX_WIDGET_STACK_MEMBERS = WidgetStacks.MAX_MEMBERS - 1
         // The top of the Widget padding bar, which a widget's own padding
         // shares.
         const val MAX_WIDGET_PADDING_DP = 24
+        const val MAX_WIDGET_RADIUS_DP = 32
+        const val MAX_WIDGET_BORDER_DP = 16
+        const val MAX_WIDGET_SHADOW_DP = 32
     }
 }

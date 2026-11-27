@@ -125,6 +125,7 @@ import com.supernova.launcher.ui.SearchBarPlacement
 import com.supernova.launcher.ui.SearchController
 import com.supernova.launcher.ui.ScrollEffect
 import com.supernova.launcher.ui.WorkspacePagerAdapter
+import com.supernova.launcher.ui.StackManageSheet
 import com.supernova.launcher.ui.theme.AccentColor
 import com.supernova.launcher.ui.theme.ThemeEngine
 import com.supernova.launcher.widget.WidgetResizeFrame
@@ -145,6 +146,22 @@ class LauncherActivity :
     com.supernova.launcher.ui.VoiceSearch.Host {
 
     private lateinit var binding: ActivityLauncherBinding
+    // The icon's pop-up widget while it is up; Back or a touch outside
+    // dismisses it.
+    private var popupWidgetWindow: android.widget.PopupWindow? = null
+    // The card and hosted widget it holds, and where the window sits: the
+    // resize grip works in these.
+    private var popupWidgetCard: android.widget.FrameLayout? = null
+    private var popupWidgetHost: android.appwidget.AppWidgetHostView? = null
+    private var popupWidgetX = 0
+    private var popupWidgetY = 0
+    private var popupWidgetW = 0
+    private var popupWidgetH = 0
+    private var popupWidgetMinW = 0
+    private var popupWidgetMaxW = 0
+    private var popupWidgetMinH = 0
+    private var popupWidgetMaxH = 0
+    private var popupWidgetTabDrop = 0
     private val viewModel: LauncherViewModel by viewModels { LauncherViewModel.Factory(appGraph) }
 
     override lateinit var workspaceAdapter: WorkspacePagerAdapter
@@ -212,6 +229,7 @@ class LauncherActivity :
                 override fun showDesktopPreviews() = desktopPreviews.show()
                 override fun openFeed() = feed.open()
                 override fun openPrivateSpace(anchor: View?) = privateSpaceCard.open(anchor)
+                override fun toggleReachability() = this@LauncherActivity.toggleReachability()
             }
         )
     }
@@ -340,6 +358,9 @@ class LauncherActivity :
     private val folderPopup by lazy { FolderPopup(this) }
     // The open folder card, if any. A PopupWindow outlives a home press on its
     // own, so onNewIntent has to close it like every other overlay.
+    // The folder windows open, oldest first: a folder inside a folder opens
+    // above its parent, and closing a window closes anything opened from it.
+    private val folderWindows = mutableListOf<android.widget.PopupWindow>()
     private var activeFolderPopup: android.widget.PopupWindow? = null
     // The open folder's members, so a badge moving redraws them too.
     private var activeFolderAdapter: FolderMemberAdapter? = null
@@ -664,6 +685,11 @@ class LauncherActivity :
         ThemeEngine.applyAccent(this, appliedAccent)
         binding = ActivityLauncherBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // The drawer's container has no height until it is first measured; the
+        // bottom-shift setting is applied from its own layout from then on.
+        binding.drawerListContainer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyDrawerBottomShift()
+        }
         rememberConfiguration(resources.configuration)
         setUpEdgeToEdge()
         // A theme flip recreates this activity with no pref changing.
@@ -1030,7 +1056,13 @@ class LauncherActivity :
         // the lifted icon comes back.
         launchPrelude.clear()
         if (::drag.isInitialized) drag.cancel()
+        // A page drag owns the pager's alpha and its own overlay; stopping
+        // without a cancel left the home page invisible until Back or a
+        // restart. The touch stream is not guaranteed to end first.
+        if (::pageDrag.isInitialized) pageDrag.cancel()
         if (!viewModel.state.value.prefs.dockRememberPosition) showMainDockPage(animate = false)
+        resetReachability()
+        popupWidgetWindow?.dismiss()
         widgets.stopListening()
         runCatching { unregisterReceiver(dateChangeReceiver) }
         MainStallWatch.stop()
@@ -1045,6 +1077,16 @@ class LauncherActivity :
         // open is one they came back to, not one parked behind an app.
         drawerKeptBehindLaunch = false
         reopenDockIfAutoClosed()
+        // A Labs custom transition may have been edited while Settings was
+        // in front; its spec is not in the prefs, so re-read it here even
+        // when the effect's own name did not change.
+        if (::binding.isInitialized) {
+            val prefs = viewModel.state.value.prefs
+            applyScrollEffect(
+                if (Animations.pageEffects(prefs)) prefs.scrollEffect else ScrollEffect.NONE,
+                force = true
+            )
+        }
     }
 
     override fun onPause() {
@@ -1403,6 +1445,20 @@ class LauncherActivity :
             // settings root's reason (8dc7642).
             defaultFocusHighlightEnabled = false
             com.supernova.launcher.ui.PageFlingSettle.attach(this)
+            // A scroll effect leaves every page out of view see-through, and
+            // a page that has slid out of the list keeps that look in its
+            // cache. Turned off (None, or Disable animations), the effect
+            // resets only the pages laid out then, and with no transformer
+            // left nothing reset the rest: a page came back invisible, its
+            // widgets and icons still taking taps (#374).
+            addOnChildAttachStateChangeListener(object :
+                androidx.recyclerview.widget.RecyclerView.OnChildAttachStateChangeListener {
+                override fun onChildViewAttachedToWindow(view: View) {
+                    if (appliedScrollEffect == ScrollEffect.NONE) PageTransformers.resetTransforms(view)
+                }
+
+                override fun onChildViewDetachedFromWindow(view: View) = Unit
+            })
         }
         binding.workspacePager.registerOnPageChangeCallback(object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
@@ -1689,6 +1745,10 @@ class LauncherActivity :
                     )
                 }
 
+                // The same path a home screen icon takes, so the launch is
+                // counted (noteLaunch) like any other.
+                override fun launchApp(app: LaunchableApp) = this@LauncherActivity.launchApp(app)
+
                 override fun openCalendarEvent(eventId: Long) {
                     runLogged("open calendar event") {
                         startActivity(
@@ -1751,6 +1811,7 @@ class LauncherActivity :
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.launchGeneration.collect {
                     if (drawer.isVisible) drawer.refreshFrequentRow()
+                    if (viewModel.state.value.prefs.dockSuggestions) renderDock(viewModel.state.value)
                 }
             }
         }
@@ -1905,6 +1966,8 @@ class LauncherActivity :
                         }
                     )
                     applySystemChrome(state.prefs)
+                    applyHandedness(state.prefs)
+                    applyDrawerBottomShift()
                     feed.onPrefs(state.prefs)
                     // Everything above needs no icons, so it runs as soon as
                     // the persisted state decodes. Everything below binds
@@ -1945,7 +2008,10 @@ class LauncherActivity :
                     if (::editMode.isInitialized) editMode.onPageChanged()
                     // Snapshot once the real layout has arrived, so a bad edit
                     // later in the session is recoverable.
-                    if (state.model.items.isNotEmpty()) viewModel.writeAutoBackupOnce()
+                    if (state.model.items.isNotEmpty()) {
+                        viewModel.writeAutoBackupOnce()
+                        viewModel.repinShortcutsOnce()
+                    }
                     // Its own color, or the labels' as the swipe arrow has.
                     binding.pageIndicator.configure(
                         state.prefs.pageIndicatorStyle,
@@ -1980,8 +2046,8 @@ class LauncherActivity :
         }
     }
 
-    private fun applyScrollEffect(effect: ScrollEffect) {
-        if (effect == appliedScrollEffect) return
+    private fun applyScrollEffect(effect: ScrollEffect, force: Boolean = false) {
+        if (!force && effect == appliedScrollEffect) return
         appliedScrollEffect = effect
         // Transformers only reset the properties they mutate, so the previous
         // effect's leftovers (rotation, alpha, ...) must be cleared by hand.
@@ -1990,7 +2056,16 @@ class LauncherActivity :
                 PageTransformers.resetTransforms(recycler.getChildAt(index))
             }
         }
-        binding.workspacePager.setPageTransformer(PageTransformers.forEffect(effect))
+        // A Labs spec lives outside the prefs, so it is read when the effect
+        // is applied rather than cached with the enum.
+        val custom = if (effect == ScrollEffect.CUSTOM) {
+            com.supernova.launcher.data.CustomTransitionStore.load(this)
+        } else {
+            null
+        }
+        binding.workspacePager.setPageTransformer(
+            PageTransformers.forEffect(effect, custom)
+        )
     }
 
     // Status bar visibility/icon tint, nav bar transparency and rotation
@@ -2127,6 +2202,17 @@ class LauncherActivity :
         // authoritative once there is one; before that the window minus the
         // dock's own margins is the same number.
         dockSlotWidthPx = dockContentWidth(prefs) / prefs.dockCount.coerceAtLeast(1)
+        // Empty slots on the main page can suggest apps used recently. They
+        // are ordinary icons: tapping opens the app, long-pressing arms the
+        // drawer's drag, so one can be dragged into the dock to keep it.
+        val suggestionSlots = if (prefs.dockSuggestions && dockPage == 0) {
+            (0 until prefs.dockCount).count { dockByRank[rankBase + it] == null }
+        } else {
+            0
+        }
+        val suggestions =
+            if (suggestionSlots > 0) viewModel.dockSuggestions(suggestionSlots) else emptyList()
+        var suggestionAt = 0
         // An empty dock still has to be a drop target, so it never collapses
         // below a bare icon column even with every slot empty.
         binding.dockBar.minimumHeight = dockIconBoxPx(prefs) +
@@ -2149,7 +2235,8 @@ class LauncherActivity :
                 setTag(R.id.tag_dock_rank, rank)
             }
 
-            dockByRank[rank]?.let { item ->
+            val item = dockByRank[rank]
+            if (item != null) {
                 val itemView = viewForItem(item)
                 if (itemView.parent != null) {
                     (itemView.parent as? ViewGroup)?.removeView(itemView)
@@ -2160,6 +2247,11 @@ class LauncherActivity :
                 itemView.alpha = if (drag.isSettling(item.id)) 0f else 1f
                 slot.addView(
                     itemView,
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                )
+            } else if (suggestionAt < suggestions.size) {
+                slot.addView(
+                    dockSuggestionView(suggestions[suggestionAt++]),
                     FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 )
             }
@@ -2175,6 +2267,44 @@ class LauncherActivity :
         // after the slots: the height it spaces from is theirs.
         applyDockChrome(prefs)
         leaving?.let { dockSlide.play(it, slide, Animations.duration(prefs, DOCK_SLIDE_MS)) }
+    }
+
+    // A suggested app in an empty dock slot: the dock's own cell, labels and
+    // badges, a tap to launch. Long-press arms the drawer's drag, so it can be
+    // dragged into the dock to keep it.
+    private fun dockSuggestionView(app: com.supernova.launcher.data.LaunchableApp): View {
+        val prefs = viewModel.state.value.prefs
+        val binding = ItemIconBinding.inflate(LayoutInflater.from(this))
+        val box = dockIconBoxPx(prefs)
+        binding.icon.updateLayoutParams { width = box; height = box }
+        binding.root.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        binding.root.setPadding(
+            dp(DOCK_ITEM_PADDING_H_DP), dp(DOCK_ITEM_PADDING_V_DP),
+            dp(DOCK_ITEM_PADDING_H_DP), dp(DOCK_ITEM_PADDING_V_DP)
+        )
+        binding.icon.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        binding.icon.setImageDrawable(
+            itemIcons.withBadge(
+                viewModel.appCatalog().iconFor(app),
+                app.packageName,
+                app.className,
+                app.userSerial
+            )
+        )
+        binding.label.text = app.label
+        LabelStyler.apply(
+            binding.label, prefs, onWallpaper = true,
+            context = com.supernova.launcher.ui.LabelContext.DOCK
+        )
+        binding.label.visibility = if (prefs.dockLabels) View.VISIBLE else View.GONE
+        binding.root.contentDescription = app.label
+        binding.root.setOnClickListener { launchApp(app, it) }
+        binding.root.setOnLongClickListener { v ->
+            longPressNewApp(v, app)
+            true
+        }
+        if (Animations.enabled(prefs)) com.supernova.launcher.ui.ItemPress.attach(binding.root)
+        return binding.root
     }
 
     // Everything the dock draws from. renderDock tears the row down with
@@ -2207,6 +2337,14 @@ class LauncherActivity :
                     ""
                 }
         }
+        // What the empty slots would suggest, so a recently used app arriving
+        // in or out of them redraws the dock.
+        val suggestions = if (state.prefs.dockSuggestions && dockPage == 0) {
+            viewModel.dockSuggestions(state.prefs.dockCount)
+                .joinToString(";") { com.supernova.launcher.ui.DockSuggestions.key(it) }
+        } else {
+            ""
+        }
         return listOf(
             state.prefs,
             state.iconGeneration,
@@ -2214,7 +2352,8 @@ class LauncherActivity :
             drag.settlingItemId,
             isLandscape,
             binding.dockBar.width,
-            items
+            items,
+            suggestions
         )
     }
 
@@ -2399,6 +2538,123 @@ class LauncherActivity :
         }
         // applyDockChrome's guard key carries systemInsets, so this re-applies.
         applyDockChrome(viewModel.state.value.prefs)
+    }
+
+    private var reachabilityScrim: View? = null
+
+    // Reachability: the home's grid comes down into the bottom half for a
+    // moment, and the empty band over it takes a tap to put it back. The dock
+    // stays put - it is already within reach.
+    private fun toggleReachability() {
+        if (reachabilityScrim != null) {
+            exitReachability()
+            return
+        }
+        val pager = binding.workspacePager
+        if (pager.height <= 0 || drawer.isVisible || search.isOpen || feed.isOpen ||
+            (::editMode.isInitialized && editMode.isOpen)
+        ) {
+            return
+        }
+        val prefs = viewModel.state.value.prefs
+        val shift = (pager.height * REACHABILITY_FRACTION).toInt()
+        if (shift <= 0) return
+        val scrim = View(this).apply {
+            setBackgroundColor(REACHABILITY_SCRIM)
+            isClickable = true
+            contentDescription = getString(R.string.reachability_restore)
+            setOnClickListener { exitReachability() }
+            alpha = 0f
+        }
+        (binding.root as ViewGroup).addView(
+            scrim,
+            androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, shift
+            ).apply { gravity = Gravity.TOP }
+        )
+        reachabilityScrim = scrim
+        val duration = Animations.duration(prefs, REACHABILITY_MS)
+        pager.animate().cancel()
+        pager.animate().translationY(shift.toFloat()).setDuration(duration).start()
+        scrim.animate().alpha(1f).setDuration(duration).start()
+    }
+
+    private fun exitReachability() {
+        val scrim = reachabilityScrim ?: return
+        reachabilityScrim = null
+        val duration = Animations.duration(viewModel.state.value.prefs, REACHABILITY_MS)
+        binding.workspacePager.animate().cancel()
+        binding.workspacePager.animate().translationY(0f).setDuration(duration).start()
+        scrim.animate().alpha(0f).setDuration(duration).withEndAction {
+            (scrim.parent as? ViewGroup)?.removeView(scrim)
+        }.start()
+    }
+
+    // Leaving the launcher (or the drawer opening over it) puts the home
+    // straight back rather than animating behind something else.
+    private fun resetReachability() {
+        val scrim = reachabilityScrim ?: return
+        reachabilityScrim = null
+        binding.workspacePager.animate().cancel()
+        binding.workspacePager.translationY = 0f
+        (scrim.parent as? ViewGroup)?.removeView(scrim)
+    }
+
+    // Bottom-shifted drawer: the list starts lower, in the thumb's half. A top
+    // margin on the list's container does it - the container's weight takes
+    // the lost height from the list, not from the sheet.
+    private fun applyDrawerBottomShift() {
+        val list = binding.drawerListContainer
+        val params = list.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
+        val prefs = viewModel.state.value.prefs
+        val parentHeight = (list.parent as? View)?.height ?: 0
+        val margin = if (prefs.drawerBottomShift && parentHeight > 0) {
+            (parentHeight * DRAWER_SHIFT_FRACTION).toInt()
+        } else {
+            0
+        }
+        if (params.topMargin != margin) {
+            params.topMargin = margin
+            list.layoutParams = params
+        }
+    }
+
+    // Left-handed mode puts the drawer's fast scroller - and its letter
+    // bubble - on the left, where a left thumb can reach. The scroller draws
+    // for a right edge; mirroring the view moves its track to the new edge
+    // and the framework maps touches through the same transform.
+    private fun applyHandedness(prefs: LauncherPrefs) {
+        val side = if (prefs.leftHanded) Gravity.START else Gravity.END
+        val scroller = binding.drawerFastScroller
+        val params = scroller.layoutParams as? FrameLayout.LayoutParams
+        if (params != null && params.gravity != side) {
+            params.gravity = side
+            scroller.layoutParams = params
+        }
+        val mirror = if (prefs.leftHanded) -1f else 1f
+        if (scroller.scaleX != mirror) scroller.scaleX = mirror
+        // The alphabet index is symmetric: it only changes sides.
+        val indexParams = binding.drawerAlphabetIndex.layoutParams as? FrameLayout.LayoutParams
+        if (indexParams != null && indexParams.gravity != side) {
+            indexParams.gravity = side
+            binding.drawerAlphabetIndex.layoutParams = indexParams
+        }
+        val bubble = binding.drawerFastScrollBubble
+        val bubbleParams = bubble.layoutParams as? FrameLayout.LayoutParams
+        if (bubbleParams != null) {
+            val want = Gravity.TOP or side
+            val margin = resources.getDimensionPixelSize(R.dimen.space_ml)
+            val start = if (prefs.leftHanded) margin else 0
+            val end = if (prefs.leftHanded) 0 else margin
+            if (bubbleParams.gravity != want || bubbleParams.marginStart != start ||
+                bubbleParams.marginEnd != end
+            ) {
+                bubbleParams.gravity = want
+                bubbleParams.marginStart = start
+                bubbleParams.marginEnd = end
+                bubble.layoutParams = bubbleParams
+            }
+        }
     }
 
     private fun applyDockChrome(prefs: LauncherPrefs) {
@@ -2607,6 +2863,30 @@ class LauncherActivity :
             DockBgStyle.ROUNDED -> dockBackgroundDrawable(
                 resolvedDock, dp(prefs.dockBgRadius).toFloat(), dockBehindNav || dockFullBleed
             )
+            DockBgStyle.LIQUID -> {
+                val night = (resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                val glass = com.supernova.launcher.data.GlassPrefs.resolve(
+                    prefs,
+                    night,
+                    dp(prefs.dockBgRadius).toFloat(),
+                    resources.displayMetrics.density
+                )
+                com.supernova.launcher.ui.LiquidGlassDrawable(
+                    this,
+                    glass.look,
+                    glass.backdrop,
+                    prefs.lowSpec || prefs.lowRam
+                ).also {
+                    // Glass needs to read as a surface even at the dock's
+                    // usual low opacity; the slider can only add to that.
+                    it.alpha = maxOf(
+                        android.graphics.Color.alpha(resolvedDock.surface),
+                        (0.55f * 255).toInt()
+                    )
+                }
+            }
             DockBgStyle.SQUARE -> dockBackgroundDrawable(resolvedDock, 0f, dockBehindNav || dockFullBleed)
         }
     }
@@ -2810,6 +3090,7 @@ class LauncherActivity :
         // A folder card the same swipe closed on its first touch (#110), read
         // after the reset, whose own closes don't count twice.
         val closed = com.supernova.launcher.ui.OpenDialogs.dismissAll(this) or
+            closeFolderWindows() or
             resetToHome(animate = scroll, keepDrawer = keepDrawerOpen, keepPage = keepPage) or
             cardSwipeClose.takeFor(SystemClock.uptimeMillis()) or promptClosed
         // A press on the home screen itself also slides the dock back to its
@@ -2868,8 +3149,13 @@ class LauncherActivity :
         return prefs.drawerRememberPosition
     }
 
-    private fun launchApp(app: LaunchableApp, anchor: View? = null) {
-        launchWithAnimation(anchor) { bounds, options ->
+    private fun launchApp(
+        app: LaunchableApp,
+        anchor: View? = null,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
+        launchWithAnimation(anchor, nudge, nudgeUp) { bounds, options ->
             runLogged("launch app") {
                 viewModel.appCatalog().launch(app, bounds, options)
             }.onSuccess {
@@ -2944,7 +3230,12 @@ class LauncherActivity :
     // with the icon's screen bounds and the transition's options, and says
     // whether it did. Circle and Adaptive icon play their launcher-side part
     // first (LaunchPrelude) and launch as it ends.
-    private fun launchWithAnimation(item: View?, launch: (Rect?, android.os.Bundle?) -> Boolean) {
+    private fun launchWithAnimation(
+        item: View?,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true,
+        launch: (Rect?, android.os.Bundle?) -> Boolean
+    ) {
         // A tap while another launch's prelude plays.
         if (launchPrelude.isBusy) return
         val prefs = viewModel.state.value.prefs
@@ -2961,6 +3252,30 @@ class LauncherActivity :
         val bounds = anchor.screenRect()
         if (none != null) {
             launch(bounds, none)
+            return
+        }
+        if (nudge) {
+            // A swipe action's launch: a nod from the anchor, then the app
+            // scales up out of it. The chosen app animation stays for taps.
+            val snapshot = runLogged("draw launch icon") { anchor.drawToBitmap() }.getOrNull()
+            if (snapshot == null) {
+                launch(bounds, runLogged("build launch options") {
+                    launchOptions(LaunchAnimation.ZOOM, anchor)
+                }.getOrNull())
+                return
+            }
+            val root = IntArray(2).also { binding.root.getLocationOnScreen(it) }
+            val rect = android.graphics.RectF(bounds).apply { offset(-root[0].toFloat(), -root[1].toFloat()) }
+            item?.let {
+                it.isPressed = false
+                it.jumpDrawablesToCurrentState()
+            }
+            launchPrelude.nudge(anchor, rect, snapshot, Animations.factor(prefs), nudgeUp) { from ->
+                val scaleUp = android.app.ActivityOptions.makeScaleUpAnimation(
+                    binding.root, from.left, from.top, from.width(), from.height()
+                ).toBundle()
+                if (!launch(bounds, scaleUp)) launchPrelude.clear()
+            }
             return
         }
         val style = prefs.launchAnimation
@@ -3016,21 +3331,26 @@ class LauncherActivity :
             .makeCustomAnimation(this, R.anim.launch_slide_left_enter, R.anim.launch_slide_left_exit)
     }.toBundle()
 
-    private fun launchItem(item: LauncherItem, anchor: View? = null) {
+    private fun launchItem(
+        item: LauncherItem,
+        anchor: View? = null,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
         when (item.itemType) {
             ItemType.FOLDER -> showFolderPopup(anchor ?: binding.root, item)
             ItemType.WIDGET -> Unit
-            ItemType.APP -> item.toLaunchableApp()?.let { launchApp(it, anchor) }
+            ItemType.APP -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge, nudgeUp) }
             ItemType.SHORTCUT -> {
                 val uri = item.intentUri
                 when {
                     uri != null -> {
                         val action = com.supernova.launcher.gesture.ActionShortcut.decode(uri)
-                        if (action != null) actions.run(action, anchor) else launchIntentUri(uri, anchor)
+                        if (action != null) actions.run(action, anchor) else launchIntentUri(uri, anchor, nudge, nudgeUp)
                     }
                     item.packageName != null && item.shortcutId != null ->
-                        launchShortcut(item.packageName, item.shortcutId, item.userSerial, anchor)
-                    else -> item.toLaunchableApp()?.let { launchApp(it, anchor) }
+                        launchShortcut(item.packageName, item.shortcutId, item.userSerial, anchor, nudge, nudgeUp)
+                    else -> item.toLaunchableApp()?.let { launchApp(it, anchor, nudge, nudgeUp) }
                 }
             }
         }
@@ -3096,7 +3416,9 @@ class LauncherActivity :
         packageName: String,
         shortcutId: String,
         userSerial: Long,
-        anchor: View? = null
+        anchor: View? = null,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
     ) {
         // A paused work app's shortcut can't start (an app itself gets the
         // system's own prompt): offer to turn work apps back on instead.
@@ -3106,14 +3428,23 @@ class LauncherActivity :
         }
         val launcherApps = getSystemService(LauncherApps::class.java) ?: return
         val user = viewModel.appCatalog().userForSerial(userSerial) ?: Process.myUserHandle()
-        launchWithAnimation(anchor) { bounds, options ->
+        launchWithAnimation(anchor, nudge, nudgeUp) { bounds, options ->
             runLogged("launch shortcut") {
                 launcherApps.startShortcut(packageName, shortcutId, bounds, options, user)
             }.onSuccess {
                 maybeAutoCloseDock()
                 maybeAutoCloseDrawer()
             }.onFailure {
-                Toast.makeText(this, R.string.shortcut_failed, Toast.LENGTH_SHORT).show()
+                // A pin-only shortcut (an app's "add to home screen") doesn't
+                // outlive the install that pinned it: a reinstall and restore
+                // brings the icon back but not the shortcut, and only its app
+                // can make it again.
+                if (shortcutInfo(packageName, shortcutId, userSerial) == null) {
+                    val app = installedApp(packageName, userSerial)?.label ?: packageName
+                    Toast.makeText(this, getString(R.string.shortcut_gone, app), Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, R.string.shortcut_failed, Toast.LENGTH_SHORT).show()
+                }
             }.isSuccess
         }
     }
@@ -3128,7 +3459,12 @@ class LauncherActivity :
 
     // Fires an arbitrary intent stored on an item (an activity chosen from the
     // picker, or a legacy created shortcut). Reuses the app-launch reveal.
-    private fun launchIntentUri(uri: String, anchor: View?) {
+    private fun launchIntentUri(
+        uri: String,
+        anchor: View?,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
         val intent = runLogged("read intent item") { Intent.parseUri(uri, Intent.URI_INTENT_SCHEME) }.getOrNull()
         if (intent == null) {
             Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_SHORT).show()
@@ -3144,7 +3480,7 @@ class LauncherActivity :
             requestCallPermission.launch(android.Manifest.permission.CALL_PHONE)
             return
         }
-        launchWithAnimation(anchor) { bounds, options ->
+        launchWithAnimation(anchor, nudge, nudgeUp) { bounds, options ->
             intent.sourceBounds = bounds
             runLogged("launch intent item") { startActivity(intent, options) }
                 .onSuccess { maybeAutoCloseDock() }
@@ -3190,7 +3526,16 @@ class LauncherActivity :
 
     // The configurable extra rows (popupItemsHome/popupItemsDrawer). HIDE is
     // added by the drawer menu itself so it keeps its historical position.
+    private fun addUninstallRow(menu: SupernovaPopupMenu, packageName: String, userSerial: Long) {
+        menu.addRow(getString(R.string.uninstall), R.drawable.ic_menu_uninstall) {
+            startActivity(viewModel.appCatalog().uninstallIntent(packageName, userSerial))
+        }
+    }
+
     private fun addExtraRows(menu: SupernovaPopupMenu, extras: Set<PopupExtraRow>, app: LaunchableApp) {
+        if (PopupExtraRow.UNINSTALL in extras) {
+            addUninstallRow(menu, app.packageName, app.userSerial)
+        }
         // Opens the app's market:// page, which any installed store can
         // take, so the row names no store.
         if (PopupExtraRow.PLAY_STORE in extras) {
@@ -3329,11 +3674,6 @@ class LauncherActivity :
         }
         menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
             viewModel.appCatalog().openAppInfo(app.packageName, app.className, app.userSerial)
-        }
-        if (PopupExtraRow.UNINSTALL in extras) {
-            menu.addRow(getString(R.string.uninstall), R.drawable.ic_menu_uninstall) {
-                startActivity(viewModel.appCatalog().uninstallIntent(app.packageName, app.userSerial))
-            }
         }
         menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
             source?.dismiss()
@@ -3552,8 +3892,25 @@ class LauncherActivity :
                     menu.addRow(getString(R.string.widget_resize), R.drawable.ic_menu_resize) {
                         widgets.showResizeFrame(item, anchor)
                     }
-                    menu.addRow(getString(R.string.padding), R.drawable.ic_menu_padding) {
+                    menu.addRow(getString(R.string.widget_style_and_padding), R.drawable.ic_menu_padding) {
                         widgets.showPaddingDialog(item, anchor)
+                    }
+                    if (widgets.canAddToStack(item)) {
+                        menu.addRow(getString(R.string.widget_add_to_stack), R.drawable.ic_menu_widgets) {
+                            widgets.showPickerForStack(item)
+                        }
+                    }
+                    if (item.widgetStack.isNotEmpty() && item.widgetStackFront > 0) {
+                        menu.addRow(getString(R.string.widget_remove_from_stack), R.drawable.ic_menu_remove_item) {
+                            removeStackMember(item)
+                        }
+                    }
+                    // Every member, in the swipe order, reorderable and
+                    // removable in one place; Add to stack only ever appends.
+                    if (item.widgetStack.isNotEmpty()) {
+                        menu.addRow(getString(R.string.widget_manage_stack), R.drawable.ic_menu_sort) {
+                            StackManageSheet.show(this, lifecycleScope, viewModel, widgets, item)
+                        }
                     }
                     // The quickmenu pair, for a widget that overlaps other
                     // items: which of them draws on top and takes the touch.
@@ -3575,11 +3932,16 @@ class LauncherActivity :
                 }
                 // The widget menu has the provider's App info, locked or not,
                 // as an app's menu does.
-                item.widgetProvider?.let(ComponentName::unflattenFromString)?.let { provider ->
-                    menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
-                        // The provider names the package and, through the
-                        // user, the profile its details open in.
-                        viewModel.appCatalog().openAppInfo(provider.packageName, provider.className, item.userSerial)
+                widgets.activeWidgetMember(item)?.let { member ->
+                    member.provider
+                        .takeIf { it.isNotBlank() }
+                        ?.let(ComponentName::unflattenFromString)
+                        ?.let { provider ->
+                        menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
+                            viewModel.appCatalog().openAppInfo(
+                                provider.packageName, provider.className, member.userSerial
+                            )
+                        }
                     }
                 }
                 // The widget's own settings screen, for widgets that offer it
@@ -3589,7 +3951,7 @@ class LauncherActivity :
                         widgets.openWidgetSettings(item)
                     }
                 }
-                val widgetLabel = item.appWidgetId?.let(widgets::label)
+                val widgetLabel = widgets.activeWidgetMember(item)?.appWidgetId?.let(widgets::label)
                 addExportPngRow(menu, anchor, widgetLabel ?: item.label)
             }
             ItemType.APP,
@@ -3700,8 +4062,40 @@ class LauncherActivity :
         if (app == null && shortcut == null) return
         // An app icon's Edit is this copy's own, not the drawer's.
         val placed = item.takeIf { shortcut == null }
+        // A pop-up widget belongs to an icon, not to the app: only a placed
+        // app or shortcut offers it.
+        // Every placed app or shortcut can carry one, the dock's included:
+        // dock icons bind through the same item view, so they have swipes.
+        val popupItem = item.takeIf {
+            it.itemType == ItemType.APP || it.itemType == ItemType.SHORTCUT
+        }
+        val livePopup = { viewModel.state.value.model.items.firstOrNull { it.id == item.id } }
+        // Null for an icon that can't have one, so the sheet leaves the rows
+        // out rather than offering a widget no swipe could show.
+        val popupLabel: (() -> String?)? = popupItem?.let {
+            { livePopup()?.let(widgets::popupWidgetLabel) }
+        }
+        val onEditPopup: (() -> Unit)? = popupItem?.let { placed ->
+            {
+                (livePopup() ?: placed).let(widgets::showPickerForPopup)
+                Unit
+            }
+        }
+        val onRemovePopup: (() -> Unit)? = popupItem?.let { placed ->
+            {
+                (livePopup() ?: placed).let { live ->
+                    live.popupWidget?.appWidgetId?.let(widgets::releaseWidgetId)
+                    viewModel.clearPopupWidget(live.id)
+                    Toast.makeText(this@LauncherActivity, R.string.popup_widget_removed, Toast.LENGTH_SHORT).show()
+                }
+                Unit
+            }
+        }
         if (!allowSwipe) {
-            AppEditSheet.show(this, lifecycleScope, viewModel, app, ::pickPhoto, shortcut = shortcut, placed = placed)
+            AppEditSheet.show(
+                this, lifecycleScope, viewModel, app, ::pickPhoto, shortcut = shortcut, placed = placed,
+                popupLabel = popupLabel, onEditPopup = onEditPopup, onRemovePopup = onRemovePopup
+            )
             return
         }
         AppEditSheet.show(
@@ -3712,7 +4106,8 @@ class LauncherActivity :
                 val live = viewModel.state.value.model.items.firstOrNull { it.id == item.id }
                 if (down) live?.swipeLabelDown else live?.swipeLabel
             },
-            onEditSwipe = { down, onPicked -> showSwipeActionPicker(item, down) { onPicked(it) } }
+            onEditSwipe = { down, onPicked -> showSwipeActionPicker(item, down) { onPicked(it) } },
+            popupLabel = popupLabel, onEditPopup = onEditPopup, onRemovePopup = onRemovePopup
         )
     }
 
@@ -3729,6 +4124,15 @@ class LauncherActivity :
     // same widget back; it is deleted once the bar goes without an Undo.
     override fun removeItemWithUndo(item: LauncherItem) = removeItemWithUndo(item, null, null)
 
+    // Remove the currently-shown member of a widget stack, leaving the primary
+    // widget and resetting the front to 0.
+    private fun removeStackMember(item: LauncherItem) {
+        val front = item.widgetStackFront
+        val member = item.widgetStack.getOrNull(front - 1) ?: return
+        member.appWidgetId?.let(widgets::releaseWidgetId)
+        viewModel.removeWidgetFromStack(item.id, front)
+    }
+
     // `window` is a view in the window the bar shows in (null: the
     // activity's), as an open folder covers the activity's; `onUndo` is
     // handed the model from before the Undo, to redraw that folder.
@@ -3738,6 +4142,7 @@ class LauncherActivity :
         onUndo: ((com.supernova.launcher.data.LauncherModel) -> Unit)?
     ) {
         val widget = item.itemType == ItemType.WIDGET
+        val popupWidget = item.popupWidget?.appWidgetId
         if (widget) widgets.onWidgetItemRemoved(item)
         // Capture before removal: the exact item plus folder members, so undo
         // restores the same ids into the same cells (or the nearest free).
@@ -3756,7 +4161,7 @@ class LauncherActivity :
             }
         viewModel.removeItem(item.id)
         if (!viewModel.state.value.prefs.undoRemove) {
-            if (widget) widgets.releaseWidget(item)
+            if (widget || popupWidget != null) widgets.releaseWidget(item)
             removeEmptyPages(emptied = item.desktopPage())
             return
         }
@@ -3779,7 +4184,9 @@ class LauncherActivity :
             override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
                 // Before the check below: a bar replaced by the next removal's
                 // is final too.
-                if (widget && event != DISMISS_EVENT_ACTION) widgets.releaseWidget(item)
+                if ((widget || popupWidget != null) && event != DISMISS_EVENT_ACTION) {
+                    widgets.releaseWidget(item)
+                }
                 if (undoSnackbar !== transientBottomBar) return
                 undoSnackbar = null
                 if (event != DISMISS_EVENT_ACTION) removeEmptyPages(emptied = item.desktopPage())
@@ -3894,6 +4301,7 @@ class LauncherActivity :
             removed.widgets.forEach(widgets::onWidgetItemRemoved)
             if (!viewModel.state.value.prefs.undoRemove) {
                 removed.widgets.forEach(widgets::releaseWidget)
+                releasedPopups(removed).forEach(widgets::releaseWidget)
                 return@removePageWithItems
             }
             val snackbar = Snackbar.make(binding.root, R.string.page_removed, UNDO_DURATION_MS)
@@ -3911,7 +4319,10 @@ class LauncherActivity :
             }
             snackbar.addCallback(object : Snackbar.Callback() {
                 override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
-                    if (event != DISMISS_EVENT_ACTION) removed.widgets.forEach(widgets::releaseWidget)
+                    if (event != DISMISS_EVENT_ACTION) {
+                        removed.widgets.forEach(widgets::releaseWidget)
+                        releasedPopups(removed).forEach(widgets::releaseWidget)
+                    }
                     if (undoSnackbar === transientBottomBar) undoSnackbar = null
                 }
             })
@@ -3919,6 +4330,11 @@ class LauncherActivity :
             snackbar.show()
         }
     }
+
+    // A removed page's icons with pop-up widgets: their host ids go with the
+    // rest once Undo has had its chance. Widget items are released above.
+    private fun releasedPopups(removed: com.supernova.launcher.data.RemovedPage): List<LauncherItem> =
+        removed.items.filter { it.itemType != ItemType.WIDGET && it.popupWidget != null }
 
     // Says what stayed on the home screen, and offers the move back.
     private fun showFolderMovedBar(move: com.supernova.launcher.data.FolderMove) {
@@ -4045,7 +4461,19 @@ class LauncherActivity :
     // screen. Targets are stored as LaunchTarget strings, action uris
     // (ActionShortcut) or intent URIs (CreatedShortcuts).
     private fun showSwipeActionPicker(item: LauncherItem, down: Boolean, onPicked: (String?) -> Unit = {}) {
-        val actions = com.supernova.launcher.gesture.ActionShortcut.choices + GestureAction.JUMP_TO_PAGE
+        val actions = buildList {
+            addAll(com.supernova.launcher.gesture.ActionShortcut.choices)
+            add(GestureAction.JUMP_TO_PAGE)
+            // A folder's own swipes can open one of its apps by position.
+            if (item.itemType == ItemType.FOLDER) add(GestureAction.LAUNCH_FOLDER_ITEM)
+            // An icon's swipe can peek at a widget bound to it: an app, a
+            // shortcut, a folder, or one of a folder's apps, on the dock too.
+            if (item.itemType == ItemType.APP || item.itemType == ItemType.SHORTCUT ||
+                item.itemType == ItemType.FOLDER
+            ) {
+                add(GestureAction.SHOW_POPUP_WIDGET)
+            }
+        }
         com.supernova.launcher.ui.ActionPickerSheet.show(
             this,
             viewModel,
@@ -4059,7 +4487,49 @@ class LauncherActivity :
             when (pick) {
                 com.supernova.launcher.ui.ActionPick.None -> save(null, null)
                 is com.supernova.launcher.ui.ActionPick.Action ->
-                    save(com.supernova.launcher.gesture.ActionShortcut.encode(pick.action), pick.label)
+                    if (pick.action == GestureAction.SHOW_POPUP_WIDGET) {
+                        if (item.popupWidget == null) {
+                            // Nothing to peek at yet: pick the widget first,
+                            // and the bind sets this swipe to open it.
+                            widgets.showPickerForPopup(item, down)
+                        } else {
+                            // One is bound: keep it, or choose another. Just
+                            // re-saving the action silently kept the old one,
+                            // with no way to change it from this picker.
+                            val label = widgets.popupWidgetLabel(item)
+                                ?: getString(R.string.popup_widget_title)
+                            MaterialAlertDialogBuilder(this)
+                                .setTitle(R.string.popup_widget_title)
+                                .setItems(
+                                    arrayOf(
+                                        getString(R.string.popup_widget_use, label),
+                                        getString(R.string.popup_widget_change)
+                                    )
+                                ) { _, which ->
+                                    if (which == 0) {
+                                        save(
+                                            com.supernova.launcher.gesture.ActionShortcut.encode(
+                                                GestureAction.SHOW_POPUP_WIDGET
+                                            ),
+                                            pick.label
+                                        )
+                                    } else {
+                                        widgets.showPickerForPopup(item, down)
+                                    }
+                                }
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show()
+                        }
+                    } else {
+                        save(com.supernova.launcher.gesture.ActionShortcut.encode(pick.action), pick.label)
+                    }
+                is com.supernova.launcher.ui.ActionPick.FolderItem ->
+                    save(
+                        com.supernova.launcher.gesture.ActionShortcut.encode(
+                            GestureAction.LAUNCH_FOLDER_ITEM, pick.index.toString()
+                        ),
+                        pick.label
+                    )
                 is com.supernova.launcher.ui.ActionPick.Page -> {
                     val page = pick.index.toString()
                     val target = com.supernova.launcher.gesture.ActionShortcut.encode(GestureAction.JUMP_TO_PAGE, page)
@@ -4087,6 +4557,7 @@ class LauncherActivity :
 
     // An app in a home folder: its home icon's rows, with Move to Home
     // among them. The folder's own order is changed by dragging.
+    @Suppress("CyclomaticComplexMethod")
     private fun folderMemberMenu(
         folder: LauncherItem,
         member: LauncherItem,
@@ -4167,7 +4638,7 @@ class LauncherActivity :
         member: LauncherItem,
         applied: (com.supernova.launcher.data.LauncherModel) -> Unit
     ) {
-        menu.addRow(getString(R.string.remove_from_folder), R.drawable.ic_menu_add) {
+        menu.addRow(getString(R.string.remove_from_folder), R.drawable.ic_action_home) {
             placeTapped(pageForFolderMembers(folder)) { spot ->
                 val before = viewModel.state.value.model
                 // The move a drag onto that free cell makes, so a folder
@@ -4178,7 +4649,74 @@ class LauncherActivity :
         }
     }
 
-    private fun showFolderPopup(anchor: View, folder: LauncherItem) {
+    // A Home press, or a top-level folder opening, closes the whole stack
+    // card by card. True when there was one, so the press had a job.
+    private fun closeFolderWindows(): Boolean {
+        if (folderWindows.isEmpty()) return false
+        val windows = folderWindows.toList()
+        folderWindows.clear()
+        windows.forEach { it.dismiss() }
+        return true
+    }
+
+    // A window going away takes the ones opened from it; a child's close
+    // leaves its parent alone.
+    private fun forgetFolderWindow(window: android.widget.PopupWindow?) {
+        window ?: return
+        val index = folderWindows.indexOf(window)
+        if (index < 0) return
+        val above = folderWindows.subList(index + 1, folderWindows.size).toList()
+        folderWindows.subList(index, folderWindows.size).clear()
+        above.forEach { it.dismiss() }
+        // The card that was behind the one closing becomes the front one, so
+        // it comes back to full size.
+        stackFolderCard(folderWindows.lastOrNull(), stacked = false)
+    }
+
+    // Pushes a folder card back (or brings it forward) for the stack: a
+    // short scale around its own centre, skipped when animations are off.
+    private fun stackFolderCard(popup: android.widget.PopupWindow?, stacked: Boolean) {
+        val card = popup?.contentView?.findViewById<View>(R.id.folderCard) ?: return
+        val target = if (stacked) FOLDER_STACK_SCALE else 1f
+        val prefs = viewModel.state.value.prefs
+        // The dim is this card's own foreground: only the parent darkens,
+        // the window (and home) behind it stays as it was. The rounded
+        // background's outline clips it to the card's corners.
+        val dim = (card.foreground as? android.graphics.drawable.GradientDrawable)
+            ?: android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.BLACK)
+                alpha = 0
+                card.clipToOutline = true
+                card.foreground = this
+            }
+        val dimTarget = if (stacked) FOLDER_STACK_DIM_ALPHA else 0
+        val duration = (FOLDER_STACK_ANIM_MS * Animations.factor(prefs)).toLong()
+        if (!Animations.enabled(prefs)) {
+            card.scaleX = target
+            card.scaleY = target
+            dim.alpha = dimTarget
+            return
+        }
+        card.pivotX = card.width / 2f
+        card.pivotY = card.height / 2f
+        card.animate()
+            .scaleX(target).scaleY(target)
+            .setDuration(duration)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
+        android.animation.ValueAnimator.ofInt(dim.alpha, dimTarget).apply {
+            this.duration = duration
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener { dim.alpha = it.animatedValue as Int }
+            start()
+        }
+    }
+
+    private fun showFolderPopup(anchor: View, folder: LauncherItem, nested: Boolean = false) {
+        // One folder from the home at a time; a folder inside a folder opens
+        // above its parent, which stays where it is.
+        if (!nested) closeFolderWindows()
+        val parentWindow = if (nested) folderWindows.lastOrNull() else null
         var folderAdapter: FolderMemberAdapter? = null
         var popup: android.widget.PopupWindow? = null
         // Moving an app inside the card, before it is taken out past the
@@ -4206,9 +4744,15 @@ class LauncherActivity :
             showLabels = folderPrefs.folderLabels,
             labelPrefs = folderPrefs,
             iconScale = if (folderPrefs.folderMatchDesktop) folderPrefs.iconScale else folderPrefs.folderIconScale,
-            onClick = {
-                if (viewModel.state.value.prefs.folderCloseOnLaunch) popup?.dismiss()
-                launchItem(it)
+            onClick = { memberView, member ->
+                if (member.itemType == ItemType.FOLDER) {
+                    // A folder inside a folder opens above it; the folder
+                    // you were in stays behind the new one.
+                    showFolderPopup(memberView, member, nested = true)
+                } else {
+                    if (viewModel.state.value.prefs.folderCloseOnLaunch) popup?.dismiss()
+                    launchItem(member, memberView)
+                }
             },
             // An app in a home folder is a home icon like any other: its
             // menu while the finger is held, and a drag once it moves - to
@@ -4232,6 +4776,9 @@ class LauncherActivity :
         }
         adapter.shortcutIcon = { member ->
             member.takeIf { it.itemType == ItemType.SHORTCUT }?.let(itemIcons::intentItemIcon)
+        }
+        adapter.folderIcon = { member ->
+            if (member.itemType == ItemType.FOLDER) itemIcon(member) {} else null
         }
         // An app's swipes work in the open folder too, as on the home screen.
         adapter.attachSwipe = { tile, member ->
@@ -4259,10 +4806,17 @@ class LauncherActivity :
                 .of(com.supernova.launcher.ui.theme.SurfaceId.FOLDER).cornerRadiiDp,
             showTitle = prefs.folderShowName,
             showCount = prefs.folderShowCount,
-            shadow = prefs.folderShadow,
+            nestedFolder = folder.folderId != null,
+            look = com.supernova.launcher.ui.folderLookOf(prefs, nested = folder.folderId != null),
             animate = Animations.enabled(prefs),
             speed = Animations.factor(prefs),
             keepAboveScreenY = dockTopOnScreen(),
+            // A nested card is hosted by the activity, not by the window of
+            // the folder it was opened from: that window can be closing.
+            windowAnchor = if (nested) binding.root else anchor,
+            // The parent comes forward as the child starts to close, in the
+            // same beat as the child's collapse.
+            onClosing = { if (parentWindow != null) stackFolderCard(parentWindow, stacked = false) },
             onRename = { viewModel.renameFolder(folder.id, it) },
             // The title row's overflow: Select apps and Sort, as the folder's
             // long-press has them. Opened by a tap, so modal at once, and the
@@ -4286,13 +4840,18 @@ class LauncherActivity :
                     // Undo bar shows in the folder's own window.
                     sortFolderWithUndo(folder.id, popup?.contentView, ::applied)
                 }
-                addMoveToDrawerRow(menu, folder) { popup?.dismiss() }
+                // A folder already inside another has no home of its own to
+                // move to the drawer; its member menu's Move to home does.
+                if (folder.container != ContainerType.FOLDER) {
+                    addMoveToDrawerRow(menu, folder) { popup?.dismiss() }
+                }
                 drag.activeItemPopup = menu
                 menu.show(button)
                 menu.makeModal()
                 memberMenu = menu
             },
             onDismiss = {
+                forgetFolderWindow(popup)
                 // A shortcut being dragged out of a member's menu closes the
                 // card too, and that close is the drag's as well.
                 val menuCarried = memberMenu?.let { drag.ownsGestureIn(it.window) } == true
@@ -4309,9 +4868,18 @@ class LauncherActivity :
                 drag.onWindowDismissed(popup)
                 activeFolderPopup = null
                 activeFolderAdapter = null
-                animateWallpaperZoom(0f)
+                // The wallpaper stays zoomed while a parent folder is still
+                // open behind the one that closed.
+                animateWallpaperZoom(if (folderWindows.isEmpty()) 0f else 1f)
             }
         )
+        popup?.let {
+            folderWindows.remove(it)
+            folderWindows.add(it)
+        }
+        // The parent settles back as the child arrives; the child's scrim
+        // dims it, so the new card stands out without a full-screen modal.
+        stackFolderCard(parentWindow, stacked = true)
         // Every touch on the card goes through the item gesture first: an
         // app held there, the drag it becomes, and the press that closes its
         // menu once modal, swallowed so it doesn't also launch the app it
@@ -4429,7 +4997,7 @@ class LauncherActivity :
             showLabels = prefs.folderLabels,
             labelPrefs = prefs,
             iconScale = if (prefs.folderMatchDesktop) prefs.iconScale else prefs.folderIconScale,
-            onClick = { item ->
+            onClick = { _, item ->
                 // A folder inside opens in this card's place; Back then
                 // closes it, not back to this one.
                 val child = held[item.id]
@@ -4485,7 +5053,7 @@ class LauncherActivity :
                 .of(com.supernova.launcher.ui.theme.SurfaceId.FOLDER).cornerRadiiDp,
             showTitle = prefs.folderShowName,
             showCount = prefs.folderShowCount,
-            shadow = prefs.folderShadow,
+            look = com.supernova.launcher.ui.folderLookOf(prefs, nested = false),
             animate = Animations.enabled(prefs),
             speed = Animations.factor(prefs),
             onRename = { newName -> groupName = viewModel.renameGroup(group, newName) },
@@ -4763,7 +5331,26 @@ class LauncherActivity :
     // An item view's icon drawn again where it is (a badge moved).
     private fun redrawItemView(view: View, item: LauncherItem) {
         if (item.itemType == ItemType.WIDGET) return
-        runCatching { ItemIconBinding.bind(view) }.getOrNull()?.let { redrawItemIcon(it, item) }
+        runCatching { ItemIconBinding.bind(view) }.getOrNull()?.let {
+            redrawItemIcon(it, item)
+            pulseBadge(it.root)
+        }
+    }
+
+    // A badge arriving or leaving changes an icon that does not move. A short
+    // settle on the item says so without shifting anything around it; with
+    // animations off it is simply the new icon.
+    private fun pulseBadge(itemView: View) {
+        if (!Animations.enabled(viewModel.state.value.prefs)) return
+        itemView.animate().cancel()
+        itemView.scaleX = PULSE_FROM
+        itemView.scaleY = PULSE_FROM
+        itemView.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(PULSE_MS)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f))
+            .start()
     }
 
     // The dock's views for these items redrawn in place; false when one of
@@ -4887,6 +5474,7 @@ class LauncherActivity :
             true
         }
         attachIconSwipe(iconBinding.root, item)
+        if (Animations.enabled(prefs)) com.supernova.launcher.ui.ItemPress.attach(iconBinding.root)
         itemMoves.attach(iconBinding.root, item.id)
         if (swipeToOpen) {
             // A tap no longer opens it, so a screen reader gets the swipe as
@@ -5043,35 +5631,394 @@ class LauncherActivity :
         v.onTouchEvent(cancel)
         cancel.recycle()
         v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-        inFolder?.invoke()
+        // A folder closes before the action runs, which detaches this icon:
+        // its screen position has to be taken while it is still attached, or
+        // a pop-up anchored at it opens at the top-left instead.
+        val location = IntArray(2)
+        v.getLocationOnScreen(location)
+        // A peek does not go anywhere, so it leaves the folder open, both to
+        // keep your place and because closing it is what the launch actions
+        // do. Everything else still gives way to what it opens.
+        val action = if (up) item.swipeAction else item.swipeActionDown
+        val peek = com.supernova.launcher.gesture.ActionShortcut.decode(action)?.action ==
+            GestureAction.SHOW_POPUP_WIDGET
+        if (!peek) inFolder?.invoke()
         when {
             up && opensOnSwipe -> showFolderPopup(v, item)
-            up -> launchSwipeAction(item, item.swipeAction, item.swipeLabel)
-            else -> launchSwipeAction(item, item.swipeActionDown, item.swipeLabelDown)
+            up -> launchSwipeAction(
+                item, item.swipeAction, item.swipeLabel, v,
+                nudgeUp = true, anchorLocation = location
+            )
+            else -> launchSwipeAction(
+                item, item.swipeActionDown, item.swipeLabelDown, v,
+                nudgeUp = false, anchorLocation = location
+            )
+        }
+    }
+
+    // The icon's pop-up widget: a card where one fits - above the icon, below
+    // it, or beside it when neither has room. It is the widget's own host
+    // view, so its taps and scrolling work; Back or a touch outside puts it
+    // away, as does leaving the launcher (a widget tap opens an app).
+    private fun showPopupWidget(
+        item: LauncherItem,
+        anchor: View?,
+        anchorLocation: IntArray? = null
+    ) {
+        val hostView = widgets.popupHostView(item)
+        if (hostView == null) {
+            Toast.makeText(this, R.string.popup_widget_unavailable, Toast.LENGTH_SHORT).show()
+            widgets.showPickerForPopup(item)
+            return
+        }
+        popupWidgetWindow?.dismiss()
+        val density = resources.displayMetrics.density
+        fun px(dp: Int) = (dp * density).toInt()
+        val margin = px(10)
+        // The tab's tip sits this far above the icon: close, not touching.
+        val gap = px(3)
+        val padding = px(8)
+        val root = binding.root
+        val windowW = resources.displayMetrics.widthPixels
+        val windowH = resources.displayMetrics.heightPixels
+        if (windowW == 0 || windowH == 0) return
+        val insets = androidx.core.view.ViewCompat.getRootWindowInsets(root)
+            ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            ?: androidx.core.graphics.Insets.NONE
+        // Screen coordinates, and the card is shown in the activity's window:
+        // a folder member's icon lives in the folder's small window, which in
+        // the dock sits near the bottom of the screen. Placing the card in
+        // that window's coordinates put it near the top instead.
+        val location = IntArray(2)
+        if (anchorLocation != null) {
+            location[0] = anchorLocation[0]
+            location[1] = anchorLocation[1]
+        } else if (anchor != null) {
+            anchor.getLocationOnScreen(location)
+        } else {
+            location[0] = windowW / 2
+            location[1] = windowH / 2
+        }
+        val left = insets.left + margin
+        val top = insets.top + margin
+        val right = windowW - insets.right - margin
+        val bottom = windowH - insets.bottom - margin
+        val (minW, minH) = widgets.popupWidgetMinSize(item)
+        // A pop-up is a peek, not a grid cell: it may be dragged smaller than
+        // the cells the provider asks for, down to a readable floor.
+        val peekMinW = px(POPUP_WIDGET_MIN_W_DP) + padding * 2
+        val peekMinH = px(POPUP_WIDGET_MIN_H_DP) + padding * 2
+        val tabHeight = px(POPUP_WIDGET_TAB_HEIGHT_DP)
+        val tabDrop = tabHeight - px(POPUP_WIDGET_TAB_OVERLAP_DP)
+        val maxCardW = right - left
+        val maxCardH = bottom - top - tabDrop
+        val cardW = (item.popupWidthDp?.let(::px)
+            ?: (px(minW.coerceAtLeast(160)) + padding * 2))
+            .coerceIn(peekMinW.coerceAtMost(maxCardW), maxCardW)
+        val cardH = (item.popupHeightDp?.let(::px)
+            ?: (px(minH.coerceAtLeast(120)) + padding * 2))
+            .coerceIn(peekMinH.coerceAtMost(maxCardH), maxCardH)
+        val windowCardH = cardH + tabDrop
+        val anchorX = location[0]
+        val anchorY = location[1]
+        val anchorW = anchor?.width ?: 0
+        val anchorH = anchor?.height ?: 0
+        val centerX = anchorX + anchorW / 2
+        val centerY = anchorY + anchorH / 2
+        // The tab points at the icon: below the card when the card is above
+        // it, above the card when the card is below.
+        var tabUp = false
+        val x: Int
+        val y: Int
+        val above = anchorY - gap - windowCardH
+        val below = anchorY + anchorH + gap
+        if (above >= top) {
+            y = above
+            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
+        } else if (below + windowCardH <= bottom) {
+            y = below
+            tabUp = true
+            x = (centerX - cardW / 2).coerceIn(left, maxOf(left, right - cardW))
+        } else if (anchorX + anchorW + gap + cardW <= right) {
+            x = anchorX + anchorW + gap
+            y = (centerY - windowCardH / 2).coerceIn(top, maxOf(top, bottom - windowCardH))
+        } else if (anchorX - gap - cardW >= left) {
+            x = anchorX - gap - cardW
+            y = (centerY - windowCardH / 2).coerceIn(top, maxOf(top, bottom - windowCardH))
+        } else {
+            // Nowhere beside it fits either: centre it, as a dialog would.
+            x = ((windowW - cardW) / 2).coerceIn(left, maxOf(left, right - cardW))
+            y = ((windowH - windowCardH) / 2).coerceIn(top, maxOf(top, bottom - windowCardH))
+        }
+        val surface = com.supernova.launcher.ui.theme.Styles
+            .resolve(this, viewModel.state.value.prefs)
+            .of(com.supernova.launcher.ui.theme.SurfaceId.POPUP)
+        val muted = (0x99000000.toInt()) or (surface.text and 0x00FFFFFF)
+        val card = android.widget.FrameLayout(this).apply {
+            background = androidx.core.content.ContextCompat
+                .getDrawable(this@LauncherActivity, R.drawable.bg_popup_widget)?.mutate()
+            clipToOutline = true
+        }
+        (card.background as? android.graphics.drawable.GradientDrawable)?.apply {
+            setColor(surface.surface)
+            // The style's own corners, when it shapes the POPUP surface.
+            surface.cornerRadiiDp?.let { radii ->
+                cornerRadii = floatArrayOf(
+                    radii[0] * density, radii[0] * density,
+                    radii[1] * density, radii[1] * density,
+                    radii[2] * density, radii[2] * density,
+                    radii[3] * density, radii[3] * density
+                )
+            }
+        }
+        (hostView.parent as? android.view.ViewGroup)?.removeView(hostView)
+        card.addView(
+            hostView,
+            android.widget.FrameLayout.LayoutParams(-1, -1).apply {
+                setMargins(padding, padding, padding, padding)
+            }
+        )
+        // The tab, outside the widget, points at the icon and opens the
+        // pop-up's controls: a widget that treats long-press or sliding as
+        // its own never has to give one up.
+        val tab = android.widget.TextView(this).apply {
+            text = "\u25BE"
+            textSize = 11f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(muted)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 6 * density
+                setColor(surface.surface)
+            }
+            contentDescription = getString(R.string.popup_widget_title)
+            isClickable = true
+            isLongClickable = true
+            setOnClickListener { showPopupWidgetControls(item) }
+            setOnLongClickListener {
+                showPopupWidgetControls(item)
+                true
+            }
+            if (tabUp) rotation = 180f
+        }
+        val content = android.widget.FrameLayout(this)
+        content.addView(
+            card,
+            android.widget.FrameLayout.LayoutParams(-1, -1).apply {
+                if (tabUp) topMargin = tabDrop else bottomMargin = tabDrop
+            }
+        )
+        // Under the icon, not under the card's centre: an icon at a screen
+        // edge opens a card clamped inward, and a centred tab would point at
+        // nothing. Clamped so it stays clear of the rounded corners.
+        val tabW = px(44)
+        val tabInset = px(20)
+        val tabLeft = (centerX - x - tabW / 2).coerceIn(tabInset, cardW - tabW - tabInset)
+        content.addView(
+            tab,
+            android.widget.FrameLayout.LayoutParams(
+                tabW, tabHeight,
+                (if (tabUp) android.view.Gravity.TOP else android.view.Gravity.BOTTOM) or
+                    android.view.Gravity.LEFT
+            ).apply { leftMargin = tabLeft }
+        )
+        val popup = android.widget.PopupWindow(content, cardW, windowCardH, true).apply {
+            isOutsideTouchable = true
+            setBackgroundDrawable(
+                android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+            )
+            elevation = 16 * density
+            isClippingEnabled = true
+            setOnDismissListener {
+                if (popupWidgetWindow === this) {
+                    popupWidgetWindow = null
+                    popupWidgetCard = null
+                    popupWidgetHost = null
+                }
+            }
+        }
+        popupWidgetCard = card
+        popupWidgetHost = hostView
+        popupWidgetX = x
+        popupWidgetY = y
+        popupWidgetW = cardW
+        popupWidgetH = cardH
+        popupWidgetTabDrop = tabDrop
+        popupWidgetMinW = peekMinW.coerceAtMost(maxCardW)
+        popupWidgetMaxW = right - x
+        popupWidgetMinH = peekMinH.coerceAtMost(maxCardH)
+        popupWidgetMaxH = bottom - y - tabDrop
+        val animate = !viewModel.state.value.prefs.lowSpec && !viewModel.state.value.prefs.lowRam
+        if (animate) {
+            content.alpha = 0f
+            content.scaleX = 0.94f
+            content.scaleY = 0.94f
+        }
+        // The activity's window, not the folder's: a folder window is small
+        // and would clip a card that leans past it.
+        popup.showAtLocation(root, android.view.Gravity.NO_GRAVITY, x, y)
+        if (animate) {
+            content.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140L).start()
+        }
+        popupWidgetWindow = popup
+    }
+
+    // A pop-up's own controls, on long-press. The workspace draws the
+    // standard widget frame (resize handles, remove) itself; a pop-up is a
+    // window of ours, so its size and removal live here instead.
+    private fun showPopupWidgetControls(item: LauncherItem) {
+        val live = viewModel.state.value.model.items.firstOrNull { it.id == item.id } ?: item
+        val resized = live.popupWidthDp != null || live.popupHeightDp != null
+        val choices = buildList<Pair<String, () -> Unit>> {
+            add(getString(R.string.popup_widget_resize) to { startPopupWidgetResize(live) })
+            if (resized) {
+                add(getString(R.string.popup_widget_reset_size) to {
+                    viewModel.setPopupWidgetSize(live.id, null, null)
+                    popupWidgetWindow?.dismiss()
+                    Toast.makeText(this@LauncherActivity, R.string.popup_widget_size_reset, Toast.LENGTH_SHORT).show()
+                })
+            }
+            add(getString(R.string.popup_widget_change) to {
+                popupWidgetWindow?.dismiss()
+                widgets.showPickerForPopup(live)
+            })
+            add(getString(R.string.popup_widget_remove) to {
+                popupWidgetWindow?.dismiss()
+                live.popupWidget?.appWidgetId?.let(widgets::releaseWidgetId)
+                viewModel.clearPopupWidget(live.id)
+                Toast.makeText(this@LauncherActivity, R.string.popup_widget_removed, Toast.LENGTH_SHORT).show()
+            })
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(widgets.popupWidgetLabel(live) ?: getString(R.string.popup_widget_title))
+            .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
+                choices.getOrNull(which)?.second?.invoke()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    // The grip in the card's corner: a drag sets the card's width and height,
+    // remembered per icon. Growing stops at the display edge; shrinking at
+    // the widget's own minimum.
+    private fun startPopupWidgetResize(item: LauncherItem) {
+        val popup = popupWidgetWindow ?: return
+        val card = popupWidgetCard ?: return
+        if (card.findViewWithTag<View>("popup-resize") != null) return
+        val density = resources.displayMetrics.density
+        val size = (30 * density).toInt()
+        val grip = android.widget.ImageView(this).apply {
+            tag = "popup-resize"
+            setImageResource(R.drawable.ic_popup_resize)
+            background = androidx.core.content.ContextCompat
+                .getDrawable(this@LauncherActivity, R.drawable.bg_popup_grip)
+            contentDescription = getString(R.string.popup_widget_resize)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            val inset = (6 * density).toInt()
+            setPadding(inset, inset, inset, inset)
+        }
+        val margin = (4 * density).toInt()
+        card.addView(
+            grip,
+            android.widget.FrameLayout.LayoutParams(
+                size, size, android.view.Gravity.BOTTOM or android.view.Gravity.END
+            ).apply { setMargins(0, 0, margin, margin) }
+        )
+        val startW = popupWidgetW
+        val startH = popupWidgetH
+        var downX = 0f
+        var downY = 0f
+        grip.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    downY = event.rawY
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val w = (startW + event.rawX - downX).toInt()
+                        .coerceIn(popupWidgetMinW, popupWidgetMaxW)
+                    val h = (startH + event.rawY - downY).toInt()
+                        .coerceIn(popupWidgetMinH, popupWidgetMaxH)
+                    if (w != popupWidgetW || h != popupWidgetH) {
+                        popupWidgetW = w
+                        popupWidgetH = h
+                        popup.update(popupWidgetX, popupWidgetY, w, h + popupWidgetTabDrop)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP,
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    viewModel.setPopupWidgetSize(
+                        item.id,
+                        Math.round(popupWidgetW / density),
+                        Math.round(popupWidgetH / density)
+                    )
+                    true
+                }
+                else -> false
+            }
         }
     }
 
     // A swipe-to-open folder's tap: the first app its window shows, launched
     // from the folder's icon. A folder with nothing to launch opens instead.
     private fun launchFolderFirstItem(folder: LauncherItem, anchor: View) {
-        val first = viewModel.folderFirstMember(folder.id)
-        if (first == null) {
-            showFolderPopup(anchor, folder)
-            return
-        }
-        launchItem(first, anchor)
+        launchFolderItem(folder, 0, anchor)
     }
 
-    private fun launchSwipeAction(item: LauncherItem, action: String?, label: String?) {
+    // A folder's own swipe: the app at [index] in the order the folder shows.
+    // A position it no longer has opens the folder, as the tap above does.
+    private fun launchFolderItem(
+        folder: LauncherItem,
+        index: Int,
+        anchor: View?,
+        nudge: Boolean = false,
+        nudgeUp: Boolean = true
+    ) {
+        val member = viewModel.folderMembers(folder.id).getOrNull(index)
+        if (member == null) {
+            showFolderPopup(anchor ?: binding.root, folder)
+            return
+        }
+        launchItem(member, anchor, nudge, nudgeUp)
+    }
+
+    private fun launchSwipeAction(
+        item: LauncherItem,
+        action: String?,
+        label: String?,
+        anchor: View? = null,
+        nudgeUp: Boolean = true,
+        anchorLocation: IntArray? = null
+    ) {
         action ?: return
-        // A launcher-action uri runs through the shared action dispatcher.
-        com.supernova.launcher.gesture.ActionShortcut.decode(action)?.let {
-            actions.run(it)
+        // A launcher-action uri runs through the shared action dispatcher;
+        // a folder's position actions are resolved against the icon itself.
+        com.supernova.launcher.gesture.ActionShortcut.decode(action)?.let { binding ->
+            if (binding.action == GestureAction.SHOW_POPUP_WIDGET) {
+                val live = viewModel.state.value.model.items.firstOrNull { it.id == item.id } ?: item
+                if (live.popupWidget == null) {
+                    widgets.showPickerForPopup(live, !nudgeUp)
+                } else {
+                    showPopupWidget(live, anchor, anchorLocation)
+                }
+                return
+            }
+            if (binding.action == GestureAction.LAUNCH_FOLDER_ITEM) {
+                if (item.itemType == ItemType.FOLDER) {
+                    launchFolderItem(
+                        item, binding.payload?.toIntOrNull() ?: 0, anchor,
+                        nudge = true, nudgeUp = nudgeUp
+                    )
+                }
+                return
+            }
+            actions.run(binding)
             return
         }
         // An intent an app's shortcut screen made (a direct dial, a route).
         if (com.supernova.launcher.ui.CreatedShortcuts.isIntentUri(action)) {
-            launchIntentUri(action, null)
+            launchIntentUri(action, anchor, nudge = true, nudgeUp = nudgeUp)
             return
         }
         // Shortcut targets are stored "pkg|shortcutId"; anything else is a
@@ -5189,6 +6136,10 @@ class LauncherActivity :
                     viewModel.movePage(from, to)
                     lifecycleScope.launch {
                         withTimeoutOrNull(FOLDER_SAVE_WAIT_MS) { viewModel.state.first { it.model !== before } }
+                        // Cancelled while the model was saving (Back, Home,
+                        // leaving edit mode): the overlay is gone and the page
+                        // it settled to is no longer wanted.
+                        if (!pageDrag.isActive) return@launch
                         binding.workspacePager.setCurrentItem(workspaceAdapter.centerPosition(to), false)
                         editMode.onPageChanged()
                         // The moved pages rebind on the next layout pass.
@@ -5254,6 +6205,11 @@ class LauncherActivity :
 
     // ---- WidgetController.Host
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::widgets.isInitialized) widgets.trimMemory(level)
+    }
+
     override val activeResizeFrame: WidgetResizeFrame?
         get() = widgets.activeResizeFrame
 
@@ -5281,6 +6237,18 @@ class LauncherActivity :
     }
 
     override fun reportWidgetSize(item: LauncherItem, view: View) = widgets.reportWidgetSize(item, view)
+    override fun applyWidgetDecoration(view: View, item: LauncherItem) = widgets.applyWidgetDecoration(view, item)
+
+    // The one-time explainer, after the first pop-up widget is bound.
+    override fun popupWidgetBound() {
+        if (viewModel.state.value.prefs.seenPopupWidgetHint) return
+        viewModel.set(com.supernova.launcher.data.Pref.seenPopupWidgetHint, true)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.popup_widget_hint_title)
+            .setMessage(R.string.popup_widget_hint)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
 
     override fun currentCellSizePx(): Pair<Int, Int> {
         val prefs = viewModel.state.value.prefs
@@ -5293,6 +6261,32 @@ class LauncherActivity :
     }
 
     companion object {
+        // A folder opened inside another pushes its parent back by this much
+        // and dims that card alone, so the two read as a stack rather than
+        // one card. The dim is the card's foreground alpha (0-255).
+        private const val FOLDER_STACK_SCALE = 0.94f
+        private const val FOLDER_STACK_DIM_ALPHA = 0x33
+        private const val FOLDER_STACK_ANIM_MS = 160L
+
+        // The smallest a pop-up widget card may be dragged, in dp: below the
+        // provider's cell minimum, which is usually most of a phone screen.
+        private const val POPUP_WIDGET_MIN_W_DP = 160
+        private const val POPUP_WIDGET_MIN_H_DP = 120
+        // The tab that points at the icon and opens the pop-up's controls,
+        // and how much of it overlaps the card.
+        private const val POPUP_WIDGET_TAB_HEIGHT_DP = 12
+        private const val POPUP_WIDGET_TAB_OVERLAP_DP = 5
+
+        // Reachability: how much of the home's height it comes down by, and
+        // how much room the bottom-shifted drawer leaves above its list.
+        private const val REACHABILITY_FRACTION = 0.34f
+        private const val REACHABILITY_MS = 260L
+        private const val REACHABILITY_SCRIM = 0x66000000
+        private const val DRAWER_SHIFT_FRACTION = 0.28f
+        // A badge change settles the item it landed on.
+        private const val PULSE_FROM = 0.94f
+        private const val PULSE_MS = 220L
+        // How often a dropped notification listener is checked for and rebound.
         private const val LISTENER_REBIND_CHECK_MS = 5000L
 
         // Every live launcher activity, for closeOtherLaunchers. Main thread

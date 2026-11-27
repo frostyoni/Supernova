@@ -144,6 +144,73 @@ class LaunchPrelude(private val root: ViewGroup) {
         }
     }
 
+    // A swipe action's launch: the icon rises a little and fades, and the app
+    // scales up out of where it got to. A nod from the icon, not the adaptive
+    // icon's trip to the centre, which read as the icon flying away from a
+    // quick swipe.
+    fun nudge(
+        icon: View,
+        iconRect: RectF,
+        snapshot: Bitmap,
+        speed: Float,
+        upward: Boolean,
+        onHandOff: (Rect) -> Unit
+    ) {
+        clear()
+        val drawable = BitmapDrawable(root.resources, snapshot)
+        root.overlay.add(drawable)
+        floating = drawable
+        hiddenIcon = icon
+        hiddenIconAlpha = icon.alpha
+        icon.alpha = 0f
+        launched = false
+        val density = root.resources.displayMetrics.density
+        val rise = NUDGE_RISE_DP * density
+        val direction = if (upward) -1f else 1f
+        val bounds = Rect()
+        fun place(fraction: Float) {
+            // Smoothstep in and out, so the icon leaves and arrives softly;
+            // the fade is still late, so it reads as the icon being taken by
+            // the app rather than dissolving.
+            val moved = fraction * fraction * (3f - 2f * fraction)
+            val grow = 1f + NUDGE_SCALE * moved
+            val centerX = iconRect.centerX()
+            val centerY = iconRect.centerY() + direction * rise * moved
+            val halfWidth = iconRect.width() * grow / 2f
+            val halfHeight = iconRect.height() * grow / 2f
+            bounds.set(
+                (centerX - halfWidth).roundToInt(), (centerY - halfHeight).roundToInt(),
+                (centerX + halfWidth).roundToInt(), (centerY + halfHeight).roundToInt()
+            )
+            drawable.bounds = bounds
+            drawable.alpha = ((1f - fraction * fraction) * 255).roundToInt()
+        }
+        place(0f)
+        animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = (NUDGE_MS * speed).toLong().coerceAtLeast(1L)
+            interpolator = LinearInterpolator()
+            addUpdateListener {
+                val fraction = it.animatedFraction
+                place(fraction)
+                if (!launched && 1f - fraction * fraction <= NUDGE_HAND_OFF_ALPHA) {
+                    launched = true
+                    // Taken off the overlay the moment the app starts: left
+                    // fading under the scaling app, it read as a ghost.
+                    floating?.let { root.overlay.remove(it) }
+                    floating = null
+                    onHandOff(Rect(bounds))
+                }
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    animator = null
+                    clear()
+                }
+            })
+            start()
+        }
+    }
+
     // Pressing home (or anything else that pauses the launcher) before the
     // app has been asked for calls the launch off.
     fun cancelPending() {
@@ -208,6 +275,11 @@ class LaunchPrelude(private val root: ViewGroup) {
         // How long the filled circle may outstay a launch that never stops
         // the launcher.
         const val COVER_HOLD_MS = 1000L
+        // The swipe launch's nod: a short rise, a touch of growth, a fade.
+        const val NUDGE_MS = 190f
+        const val NUDGE_RISE_DP = 9f
+        const val NUDGE_SCALE = 0.07f
+        const val NUDGE_HAND_OFF_ALPHA = 0.20f
         // Launcher3's AGGRESSIVE_EASE and EXAGGERATED_EASE.
         val AGGRESSIVE_EASE = PathInterpolator(0.2f, 0f, 0f, 1f)
         val EXAGGERATED_EASE = PathInterpolator(

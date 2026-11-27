@@ -1,18 +1,28 @@
 package com.supernova.launcher.ui.settings
 
 import androidx.core.graphics.toColorInt
+import androidx.appcompat.widget.AppCompatEditText
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import com.supernova.launcher.R
 import com.supernova.launcher.SupernovaApp
+import com.supernova.launcher.ui.FOLDER_BORDER_COLOR_DEFAULT
+import com.supernova.launcher.ui.FOLDER_SHADOW_COLOR_DEFAULT
 import com.supernova.launcher.data.IconGlass
 import com.supernova.launcher.data.IconShape
+import com.supernova.launcher.data.LabelFontStore
 import com.supernova.launcher.data.LauncherPrefs
+import com.supernova.launcher.data.CustomTransition
 import com.supernova.launcher.data.LockMethod
 import com.supernova.launcher.data.Pref
+import com.supernova.launcher.data.VitalsMath
 import com.supernova.launcher.data.SearchWindowMode
 import kotlin.math.roundToInt
 import com.supernova.launcher.ui.BadgePosition
 import com.supernova.launcher.ui.BadgeStyle
+import com.supernova.launcher.data.CustomTransitionStore
 import com.supernova.launcher.ui.DockBgStyle
 import com.supernova.launcher.ui.FolderPreviewStyle
 import androidx.annotation.StringRes
@@ -69,6 +79,10 @@ object SettingsCatalogue {
         val pickColor: (Int, String, Int, (String) -> Unit) -> Unit = { _, _, _, _ -> },
         val pickIconPack: () -> Unit = {},
         val pickIconShape: () -> Unit = {},
+        // The label font's file: the document picker, and the row that drops
+        // it back to a system family.
+        val pickCustomFont: () -> Unit = {},
+        val clearCustomFont: () -> Unit = {},
         val resetCustomIcons: () -> Unit = {},
         val resetHiddenLabels: () -> Unit = {},
         val clearIconCache: () -> Unit = {},
@@ -245,12 +259,16 @@ object SettingsCatalogue {
                     bar.copy(chips = if (on) without + chip.name else without)
                 }
             }
-        )
+        ).foundByOldName(chip)
 
-        fun fontPick(current: LabelFont, onPick: (LabelFont) -> Unit) = pick(
-            R.string.label_font, LabelFont.entries, LabelFont.entries.indexOf(current),
-            { context.getString(EnumLabels.of(it)) }, onPick
-        )
+        // Custom is offered once there is a file behind it, and while it is
+        // the value in force: a name that drew nothing would be a dead pick.
+        fun fontPick(current: LabelFont, onPick: (LabelFont) -> Unit) {
+            val values = LabelFont.entries.filter {
+                it != LabelFont.CUSTOM || it == current || LabelFontStore.hasFont(context)
+            }
+            pick(R.string.label_font, values, values.indexOf(current), { context.getString(EnumLabels.of(it)) }, onPick)
+        }
     }
 
     // The accent: its dot on the row, and every option's dot in the menu.
@@ -431,22 +449,28 @@ object SettingsCatalogue {
                         R.string.label_shadow, R.string.label_single_line
                     )
                 ),
-                // Only does something where labels may take two lines: the
-                // drawer and folders, whose rows otherwise follow their
-                // longest label (#347).
-                SettingItem.Toggle(
-                    R.string.label_even_rows,
-                    get = { it.labelEvenRows },
-                    set = { viewModel.set(Pref.labelEvenRows, it) },
-                    subtitle = R.string.label_even_rows_summary
-                ).waitsOn(R.string.label_group) {
-                    LabelStyler.singleLineFor(LabelContext.DRAWER, it) &&
-                        LabelStyler.singleLineFor(LabelContext.FOLDER, it)
-                },
+                // The file a Custom font reads from, under the card that
+                // picks the font: the row shows the file's name, so it is
+                // clear which one every label draws with.
+                SettingItem.Row(
+                    R.string.custom_font,
+                    subtitle = { customFontName(context) },
+                    onClick = actions.pickCustomFont
+                ).hiddenWhen { needsOn(R.string.label_group, !it.showLabels) },
+                SettingItem.Row(
+                    R.string.custom_font_remove,
+                    onClick = actions.clearCustomFont,
+                    visibleIf = { LabelFontStore.hasFont(context) }
+                ).hiddenWhen { needsOn(R.string.label_group, !it.showLabels) },
                 SettingItem.Row(
                     R.string.desktop_grid,
                     subtitle = { context.getString(R.string.grid_value, it.gridRows, it.gridCols) },
                     onClick = actions.pickDesktopGrid
+                ),
+                SettingItem.Toggle(
+                    R.string.subgrid,
+                    get = { it.subgrid },
+                    set = { viewModel.set(Pref.subgrid, it) }
                 ),
                 barPageLink(R.string.desktop_search_bar) {
                     EnumLabels.of(SearchBarPlacement.fromName(SearchBarPrefs.desktopBar(it).placement))
@@ -620,7 +644,31 @@ object SettingsCatalogue {
                     get = { it.widgetCornerRadius },
                     set = { viewModel.set(Pref.widgetCornerRadius, it) },
                     display = { context.getString(R.string.padding_dp_value, it) }
-                )
+                ),
+                SettingItem.Slider(
+                    R.string.widget_border_width,
+                    min = 0, max = 16,
+                    get = { it.widgetBorderWidth },
+                    set = { viewModel.set(Pref.widgetBorderWidth, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ),
+                rows.color(
+                    R.string.widget_border_color,
+                    { it.widgetBorderColor },
+                    default = android.graphics.Color.WHITE
+                ) { viewModel.set(Pref.widgetBorderColor, it) },
+                SettingItem.Slider(
+                    R.string.widget_shadow,
+                    min = 0, max = 32,
+                    get = { it.widgetShadow },
+                    set = { viewModel.set(Pref.widgetShadow, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ),
+                rows.color(
+                    R.string.widget_shadow_color,
+                    { it.widgetShadowColor },
+                    default = android.graphics.Color.BLACK
+                ) { viewModel.set(Pref.widgetShadowColor, it) },
             )
         ),
         SettingsSection(
@@ -641,6 +689,12 @@ object SettingsCatalogue {
                     display = { it.toString() },
                     preview = { p, v -> p.copy(dockCount = v) }
                 ).waitsOn(R.string.dock_enabled, dockOff),
+                SettingItem.Toggle(
+                    R.string.dock_suggestions,
+                    get = { it.dockSuggestions },
+                    set = { viewModel.set(Pref.dockSuggestions, it) },
+                    subtitle = R.string.dock_suggestions_summary
+                ).waitsOn(R.string.dock_enabled, dockOff),
                 SettingItem.Slider(
                     R.string.dock_pages,
                     min = 1, max = Pref.DOCK_PAGES_MAX,
@@ -648,11 +702,12 @@ object SettingsCatalogue {
                     set = { viewModel.set(Pref.dockPages, it) },
                     display = { it.toString() }
                 ).waitsOn(R.string.dock_enabled, dockOff),
-                SettingItem.Toggle(
+                rows.choice(
                     R.string.dock_bg_style,
-                    get = { it.dockBgStyle != DockBgStyle.NONE },
-                    set = { viewModel.set(Pref.dockBgStyle, if (it) DockBgStyle.ROUNDED else DockBgStyle.NONE) }
-                ).waitsOn(R.string.dock_enabled, dockOff),
+                    listOf(DockBgStyle.NONE, DockBgStyle.ROUNDED, DockBgStyle.LIQUID),
+                    { it.dockBgStyle },
+                    { EnumLabels.of(it) }
+                ) { viewModel.set(Pref.dockBgStyle, it) }.waitsOn(R.string.dock_enabled, dockOff),
                 SettingItem.Slider(
                     R.string.dock_bg_opacity,
                     min = 0, max = 100,
@@ -667,17 +722,87 @@ object SettingsCatalogue {
                     min = 0, max = 24,
                     get = { if (it.dockBgStyle == DockBgStyle.SQUARE) 0 else it.dockBgRadius },
                     // A square dock from before the switch becomes a rounded
-                    // one at the radius picked.
+                    // one at the radius picked; a liquid one stays liquid.
                     set = {
+                        val style = viewModel.state.value.prefs.dockBgStyle
                         viewModel.setAll(
-                            listOf(
-                                com.supernova.launcher.data.PrefWrite(Pref.dockBgRadius, it),
-                                com.supernova.launcher.data.PrefWrite(Pref.dockBgStyle, DockBgStyle.ROUNDED)
-                            )
+                            buildList {
+                                add(com.supernova.launcher.data.PrefWrite(Pref.dockBgRadius, it))
+                                if (style == DockBgStyle.SQUARE) {
+                                    add(com.supernova.launcher.data.PrefWrite(Pref.dockBgStyle, DockBgStyle.ROUNDED))
+                                }
+                            }
                         )
                     },
                     display = { context.getString(R.string.padding_dp_value, it) },
-                    preview = { p, v -> p.copy(dockBgRadius = v, dockBgStyle = DockBgStyle.ROUNDED) }
+                    preview = { p, v ->
+                        p.copy(
+                            dockBgRadius = v,
+                            dockBgStyle = if (p.dockBgStyle == DockBgStyle.SQUARE) DockBgStyle.ROUNDED else p.dockBgStyle
+                        )
+                    }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                // The Liquid style's optics: tint, bend, blur, light and what
+                // it bends over.
+                SettingItem.Header(R.string.group_glass),
+                rows.choice(
+                    R.string.glass_tone, com.supernova.launcher.ui.GlassTone.entries,
+                    { it.glassTone }, { EnumLabels.of(it) }
+                ) { viewModel.set(Pref.glassTone, it) }
+                    .hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                rows.choice(
+                    R.string.glass_backdrop, com.supernova.launcher.ui.GlassBackdrop.entries,
+                    { it.glassBackdrop }, { EnumLabels.of(it) }
+                ) { viewModel.set(Pref.glassBackdrop, it) }
+                    .hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_thickness, min = 4, max = 30,
+                    get = { it.glassThickness },
+                    set = { viewModel.set(Pref.glassThickness, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) },
+                    preview = { p, v -> p.copy(glassThickness = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_blur, min = 2, max = 24,
+                    get = { it.glassBlur },
+                    set = { viewModel.set(Pref.glassBlur, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) },
+                    preview = { p, v -> p.copy(glassBlur = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_density, min = 0, max = 100, step = 5,
+                    get = { it.glassDensity },
+                    set = { viewModel.set(Pref.glassDensity, it) },
+                    display = { context.getString(R.string.opacity_percent, it) },
+                    preview = { p, v -> p.copy(glassDensity = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_specular, min = 0, max = 100, step = 5,
+                    get = { it.glassSpecular },
+                    set = { viewModel.set(Pref.glassSpecular, it) },
+                    display = { context.getString(R.string.opacity_percent, it) },
+                    preview = { p, v -> p.copy(glassSpecular = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_fresnel, min = 0, max = 100, step = 5,
+                    get = { it.glassFresnel },
+                    set = { viewModel.set(Pref.glassFresnel, it) },
+                    display = { context.getString(R.string.opacity_percent, it) },
+                    preview = { p, v -> p.copy(glassFresnel = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_dispersion, min = 0, max = 8,
+                    get = { it.glassDispersion },
+                    set = { viewModel.set(Pref.glassDispersion, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) },
+                    preview = { p, v -> p.copy(glassDispersion = v) }
+                ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
+                SettingItem.Slider(
+                    R.string.glass_light, min = 0, max = 360, step = 15,
+                    get = { it.glassLight },
+                    set = { viewModel.set(Pref.glassLight, it) },
+                    display = { context.getString(R.string.glass_degrees_value, it) },
+                    preview = { p, v -> p.copy(glassLight = v) }
                 ).hiddenWhen(dockBgHidden).waitsOn(R.string.dock_enabled, dockOff).nested(),
                 SettingItem.Toggle(
                     R.string.dock_bg_behind_nav,
@@ -766,6 +891,20 @@ object SettingsCatalogue {
             R.string.settings_section_drawer,
             listOf(
                 SettingItem.Preview(PreviewKind.DRAWER),
+                // The fast scroller on the left, under a left thumb.
+                SettingItem.Toggle(
+                    R.string.left_handed,
+                    get = { it.leftHanded },
+                    set = { viewModel.set(Pref.leftHanded, it) },
+                    subtitle = R.string.left_handed_summary
+                ),
+                // The list starts lower, closer to a thumb.
+                SettingItem.Toggle(
+                    R.string.drawer_bottom_shift,
+                    get = { it.drawerBottomShift },
+                    set = { viewModel.set(Pref.drawerBottomShift, it) },
+                    subtitle = R.string.drawer_bottom_shift_summary
+                ),
                 rows.choice(
                     R.string.drawer_style, DrawerStyle.entries,
                     { it.drawerStyle }, { EnumLabels.of(it) }
@@ -897,10 +1036,17 @@ object SettingsCatalogue {
                 *labelOverrideItems(context, viewModel, actions, LabelContext.DRAWER) {
                     needsOn(R.string.drawer_labels, !it.drawerLabels)
                 }.toTypedArray(),
+                evenRowsItem(viewModel, LabelContext.DRAWER) { needsOn(R.string.drawer_labels, !it.drawerLabels) },
                 SettingItem.Toggle(
                     R.string.drawer_fast_scroller,
                     get = { it.drawerFastScroller },
                     set = { viewModel.set(Pref.drawerFastScroller, it) }
+                ).hiddenWhen { dependsOn(R.string.drawer_style, it.drawerStyle == DrawerStyle.PAGED_GRID) },
+                SettingItem.Toggle(
+                    R.string.alphabet_index,
+                    subtitle = R.string.alphabet_index_sub,
+                    get = { it.drawerAlphabetIndex },
+                    set = { viewModel.set(Pref.drawerAlphabetIndex, it) }
                 ).hiddenWhen { dependsOn(R.string.drawer_style, it.drawerStyle == DrawerStyle.PAGED_GRID) },
                 rows.color(
                     R.string.drawer_scrubber_color, { it.drawerScrubberColor },
@@ -1343,6 +1489,25 @@ object SettingsCatalogue {
                         }
                     ).waitsOn(R.string.feed_enabled, feedOff)
                 )
+                // Counted by the launcher itself: nothing to grant or ask for.
+                add(
+                    SettingItem.Toggle(
+                        R.string.feed_usage_title,
+                        subtitle = R.string.feed_show_usage,
+                        get = { it.feedShowUsage },
+                        set = { viewModel.set(Pref.feedShowUsage, it) }
+                    ).waitsOn(R.string.feed_enabled, feedOff)
+                )
+                // Read-only, and only from the notification access already
+                // granted for badges.
+                add(
+                    SettingItem.Toggle(
+                        R.string.feed_notifications_title,
+                        subtitle = R.string.feed_show_notifications,
+                        get = { it.feedShowNotifications },
+                        set = { viewModel.set(Pref.feedShowNotifications, it) }
+                    ).waitsOn(R.string.feed_enabled, feedOff)
+                )
                 add(SettingItem.Row(R.string.cards_add, onClick = actions.addCard)
                     .waitsOn(R.string.feed_enabled, feedOff))
                 // The cards' color and opacity: the Style tab's Cards row.
@@ -1410,6 +1575,7 @@ object SettingsCatalogue {
                 *labelOverrideItems(context, viewModel, actions, LabelContext.FOLDER) {
                     needsOn(R.string.folder_labels, !it.folderLabels)
                 }.toTypedArray(),
+                evenRowsItem(viewModel, LabelContext.FOLDER) { needsOn(R.string.folder_labels, !it.folderLabels) },
                 SettingItem.Toggle(
                     R.string.folder_close_on_launch,
                     get = { it.folderCloseOnLaunch },
@@ -1467,6 +1633,82 @@ object SettingsCatalogue {
                     get = { it.folderShadow },
                     set = { viewModel.set(Pref.folderShadow, it) }
                 ),
+                SettingItem.Slider(
+                    R.string.folder_shadow_spread,
+                    min = 0, max = 24,
+                    get = { it.folderShadowSpread },
+                    set = { viewModel.set(Pref.folderShadowSpread, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ).hiddenWhen { needsOn(R.string.folder_shadow, !it.folderShadow) }.nested(),
+                rows.color(
+                    R.string.folder_shadow_color,
+                    { it.folderShadowColor },
+                    subtitle = { colorLabel(context, it.folderShadowColor, FOLDER_SHADOW_COLOR_DEFAULT) },
+                    default = FOLDER_SHADOW_COLOR_DEFAULT
+                ) { viewModel.set(Pref.folderShadowColor, it) }
+                    .hiddenWhen { needsOn(R.string.folder_shadow, !it.folderShadow) }
+                    .nested(),
+                SettingItem.Slider(
+                    R.string.folder_border_width,
+                    min = 0, max = 4,
+                    get = { it.folderBorderWidth },
+                    set = { viewModel.set(Pref.folderBorderWidth, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ),
+                rows.color(
+                    R.string.folder_border_color,
+                    { it.folderBorderColor },
+                    subtitle = { colorLabel(context, it.folderBorderColor, FOLDER_BORDER_COLOR_DEFAULT) },
+                    default = FOLDER_BORDER_COLOR_DEFAULT
+                ) { viewModel.set(Pref.folderBorderColor, it) }
+                    .hiddenWhen { dependsOn(R.string.folder_border_width, it.folderBorderWidth == 0) },
+                SettingItem.Toggle(
+                    R.string.folder_subfolder_look,
+                    subtitle = R.string.folder_subfolder_look_summary,
+                    get = { it.subfolderDistinct },
+                    set = { viewModel.set(Pref.subfolderDistinct, it) }
+                ),
+                SettingItem.Slider(
+                    R.string.folder_subfolder_shadow_spread,
+                    min = 0, max = 24,
+                    get = { it.subfolderShadowSpread },
+                    set = { viewModel.set(Pref.subfolderShadowSpread, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ).hiddenWhen {
+                    dependsOn(R.string.folder_subfolder_look, !it.subfolderDistinct || !it.folderShadow)
+                }.nested(),
+                rows.color(
+                    R.string.folder_subfolder_shadow_color,
+                    { it.subfolderShadowColor },
+                    subtitle = { colorLabel(context, it.subfolderShadowColor, FOLDER_SHADOW_COLOR_DEFAULT) },
+                    default = FOLDER_SHADOW_COLOR_DEFAULT
+                ) { viewModel.set(Pref.subfolderShadowColor, it) }
+                    .hiddenWhen {
+                        dependsOn(R.string.folder_subfolder_look, !it.subfolderDistinct || !it.folderShadow)
+                    }
+                    .nested(),
+                SettingItem.Slider(
+                    R.string.folder_subfolder_border_width,
+                    min = 0, max = 4,
+                    get = { it.subfolderBorderWidth },
+                    set = { viewModel.set(Pref.subfolderBorderWidth, it) },
+                    display = { context.getString(R.string.padding_dp_value, it) }
+                ).hiddenWhen {
+                    needsOn(R.string.folder_subfolder_look, !it.subfolderDistinct)
+                }.nested(),
+                rows.color(
+                    R.string.folder_subfolder_border_color,
+                    { it.subfolderBorderColor },
+                    subtitle = { colorLabel(context, it.subfolderBorderColor, FOLDER_BORDER_COLOR_DEFAULT) },
+                    default = FOLDER_BORDER_COLOR_DEFAULT
+                ) { viewModel.set(Pref.subfolderBorderColor, it) }
+                    .hiddenWhen {
+                        dependsOn(
+                            R.string.folder_subfolder_look,
+                            !it.subfolderDistinct || it.subfolderBorderWidth == 0
+                        )
+                    }
+                    .nested(),
                 rows.choice(
                     R.string.folder_scroll, FolderScroll.entries,
                     { it.folderScroll }, { EnumLabels.of(it) }
@@ -1933,6 +2175,53 @@ object SettingsCatalogue {
         SettingsSection(
             R.string.labs,
             listOf(
+                // Fewer things to draw and animate, for an older phone.
+                SettingItem.Toggle(
+                    R.string.labs_low_spec,
+                    get = { it.lowSpec },
+                    set = { viewModel.set(Pref.lowSpec, it) },
+                    subtitle = R.string.labs_low_spec_summary
+                ),
+                SettingItem.Toggle(
+                    R.string.labs_low_ram,
+                    get = { it.lowRam },
+                    set = { viewModel.set(Pref.lowRam, it) },
+                    subtitle = R.string.labs_low_ram_summary
+                ),
+                SettingItem.Toggle(
+                    R.string.widget_memory_saver,
+                    get = { it.widgetMemorySaver },
+                    set = { viewModel.set(Pref.widgetMemorySaver, it) },
+                    subtitle = R.string.widget_memory_saver_summary
+                ),
+                SettingItem.Toggle(
+                    R.string.vitals_cpu,
+                    get = { it.vitalsCpu },
+                    set = { viewModel.set(Pref.vitalsCpu, it) },
+                    subtitle = R.string.vitals_cpu_summary
+                ),
+                SettingItem.Slider(
+                    R.string.vitals_refresh,
+                    min = VitalsMath.REFRESH_MIN_SEC, max = VitalsMath.REFRESH_MAX_SEC, step = 5,
+                    get = { it.vitalsRefreshSec },
+                    set = { viewModel.set(Pref.vitalsRefreshSec, it) },
+                    display = { context.getString(R.string.vitals_seconds, it) },
+                    note = { context.getString(R.string.vitals_refresh_summary) }
+                ),
+                SettingItem.Slider(
+                    R.string.icon_cache_kb,
+                    min = 0, max = 65536, step = 1024,
+                    get = { it.iconCacheKb },
+                    set = { viewModel.set(Pref.iconCacheKb, it) },
+                    display = { value ->
+                        if (value == 0) {
+                            context.getString(R.string.icon_cache_automatic)
+                        } else {
+                            context.getString(R.string.memory_kb_value, value)
+                        }
+                    },
+                    note = { context.getString(R.string.icon_cache_kb_summary) }
+                ),
                 SettingItem.Toggle(
                     R.string.labs_show_component,
                     get = { it.labsShowComponent },
@@ -1963,7 +2252,27 @@ object SettingsCatalogue {
                     subtitle = { context.getString(R.string.labs_clear_icon_cache_summary) },
                     onClick = actions.clearIconCache,
                     look = SettingItem.RowLook(end = 0)
-                ).describedBy(R.string.labs_clear_icon_cache_summary)
+                ).describedBy(R.string.labs_clear_icon_cache_summary),
+                SettingItem.Row(
+                    R.string.labs_custom_transition,
+                    subtitle = {
+                        CustomTransitionStore.load(context)?.let {
+                            context.getString(R.string.labs_custom_transition_named, it.name)
+                        } ?: context.getString(R.string.labs_custom_transition_summary)
+                    },
+                    onClick = { showCustomTransitionDialog(context, viewModel) },
+                    look = SettingItem.RowLook(end = 0)
+                ).describedBy(R.string.labs_custom_transition_summary),
+                SettingItem.Row(
+                    R.string.labs_custom_transition_builder,
+                    subtitle = { context.getString(R.string.labs_custom_transition_builder_summary) },
+                    onClick = {
+                        context.startActivity(
+                            Intent(context, com.supernova.launcher.ui.CustomTransitionBuilderActivity::class.java)
+                        )
+                    },
+                    look = SettingItem.RowLook()
+                ).describedBy(R.string.labs_custom_transition_builder_summary)
             )
         ),
         // Every access Supernova can ask for, each with its state; a tap
@@ -2169,6 +2478,48 @@ object SettingsCatalogue {
         }
         return label ?: context.getString(R.string.card_untitled)
     }
+
+    // Labs: a transition spec pasted as JSON, with the example ready when
+    // nothing is saved. Saving selects Custom (Labs) for the home pager; the
+    // spec itself is read when the effect is applied (and on resume).
+    private fun showCustomTransitionDialog(context: Context, viewModel: LauncherViewModel) {
+        val density = context.resources.displayMetrics.density
+        val edit = AppCompatEditText(context).apply {
+            setText(CustomTransitionStore.raw(context) ?: CustomTransition.encode(CustomTransition.example))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(
+                (16 * density).toInt(), (8 * density).toInt(),
+                (16 * density).toInt(), (8 * density).toInt()
+            )
+            minLines = 10
+            maxLines = 18
+        }
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.labs_custom_transition)
+            .setView(edit)
+            .setPositiveButton(R.string.save) { _, _ ->
+                if (CustomTransitionStore.save(context, edit.text?.toString().orEmpty())) {
+                    viewModel.set(Pref.scrollEffect, ScrollEffect.CUSTOM)
+                    Toast.makeText(context, R.string.labs_custom_transition_saved, Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, R.string.labs_custom_transition_invalid, Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNeutralButton(R.string.labs_custom_transition_share) { _, _ ->
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, edit.text?.toString().orEmpty())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(
+                    Intent.createChooser(send, context.getString(R.string.labs_custom_transition_share))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 }
 
 // What brings back a row its page hides, for the settings search's hint
@@ -2183,11 +2534,44 @@ private fun needsOff(@StringRes setting: Int, set: Boolean, @StringRes page: Int
 private fun dependsOn(@StringRes setting: Int, unmet: Boolean) =
     SettingItem.HiddenBy(setting, SettingItem.HiddenBy.Needs.OTHER).takeIf { unmet }
 
+// The custom font row's value: the picked file's name, else what picking one
+// would set. A font restored from a backup carries no name of its own.
+private fun customFontName(context: Context): CharSequence =
+    LabelFontStore.fileName(context) ?: context.getString(
+        if (LabelFontStore.hasFont(context)) R.string.custom_font_unnamed else R.string.custom_font_none
+    )
+
 // A bar's own rows grey out while its placement is None, and a tap on one
 // leads to Placement (#323).
 private val drawerFieldOff: (LauncherPrefs) -> Boolean = { !SearchBarPrefs.drawerFieldShown(it) }
 private val desktopBarOff: (LauncherPrefs) -> Boolean = {
     SearchBarPlacement.fromName(SearchBarPrefs.desktopBar(it).placement) == SearchBarPlacement.NONE
+}
+
+// The page's even row spacing (#347), under its labels: it only does
+// something where labels may take two lines, so it greys while they are
+// single-line - led to this page's own switch when its labels are
+// customized, else told it's the Home screen's.
+private fun evenRowsItem(
+    viewModel: LauncherViewModel,
+    labelContext: LabelContext,
+    sectionHidden: (LauncherPrefs) -> SettingItem.HiddenBy?
+): SettingItem {
+    fun customized(prefs: LauncherPrefs) = LabelConfig.decode(prefs.labelConfig).stored(labelContext).active()
+    return SettingItem.Toggle(
+        R.string.label_even_rows,
+        get = { LabelStyler.evenRows(labelContext, it) },
+        set = { on ->
+            viewModel.setAll(LabelStyler.evenRowsWrites(labelContext, on, viewModel.state.value.prefs))
+        },
+        subtitle = R.string.label_even_rows_summary
+    ).hiddenWhen(sectionHidden).nested().waitsOn(R.string.label_single_line) {
+        customized(it) && LabelStyler.singleLineFor(labelContext, it)
+    }.blockedWhen {
+        R.string.needs_two_line_labels.takeIf { _ ->
+            !customized(it) && LabelStyler.singleLineFor(labelContext, it)
+        }
+    }
 }
 
 private fun SettingItem.waitsOnDrawerField() = waitsOn(R.string.search_bar_placement, drawerFieldOff)
@@ -2206,6 +2590,7 @@ private fun feedBarButton(viewModel: LauncherViewModel, button: SearchBarChip) =
     // Gone with the feed's bar; greyed with the feed.
 ).hiddenWhen { needsOn(R.string.feed_show_search, !it.feedShowSearch) }
     .waitsOn(R.string.feed_enabled) { !it.feedEnabled }
+    .foundByOldName(button)
 
 private fun drawerButton(viewModel: LauncherViewModel, button: SearchBarChip) = SettingItem.Toggle(
     SearchBarButtons.label(button),
@@ -2214,7 +2599,11 @@ private fun drawerButton(viewModel: LauncherViewModel, button: SearchBarChip) = 
         val now = SearchBarButtons.decode(viewModel.state.value.prefs.drawerActionButtons)
         viewModel.set(Pref.drawerActionButtons, SearchBarButtons.encode(SearchBarButtons.toggled(now, button, on)))
     }
-).waitsOnDrawerField()
+).waitsOnDrawerField().foundByOldName(button)
+
+// The store button was "Play Store" until #357; search still finds it so.
+internal fun SettingItem.foundByOldName(button: SearchBarChip): SettingItem =
+    if (button == SearchBarChip.PLAY_STORE) searchableBy(R.string.chip_play_store) else this
 
 // The two bars' slices of the searchBarConfig JSON, for their pages' rows
 // and previews: read one, or a prefs snapshot with one changed.
@@ -2244,4 +2633,5 @@ internal object SearchBarPrefs {
         val full = SearchBarConfig.decode(prefs.searchBarConfig)
         return prefs.copy(searchBarConfig = full.copy(drawer = change(full.drawer)).encode())
     }
+
 }

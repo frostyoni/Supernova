@@ -26,6 +26,7 @@ sealed interface AppChange {
     data class Updated(val userSerial: Long, val packageNames: List<String> = emptyList()) : AppChange
 }
 
+@Suppress("LargeClass")
 class AppCatalog(
     private val context: Context,
     private val iconPacks: IconPackRepository = IconPackRepository(context)
@@ -51,8 +52,8 @@ class AppCatalog(
     private var themedIconFg: Int = 0
     // An eighth of the heap holds every icon of a large app list; the old
     // fixed 4 MB thrashed at ~55 icons and turned scrolling into re-renders.
-    private val iconCacheKb =
-        ((Runtime.getRuntime().maxMemory() / 8) / 1024).toInt().coerceIn(8 * 1024, 64 * 1024)
+    private var iconCacheKb =
+        automaticIconCacheKb()
     private val iconCache = object : LruCache<String, Drawable>(iconCacheKb) {
         override fun sizeOf(key: String, value: Drawable): Int {
             val bitmap = IconRenderer.bitmapOf(value) ?: return estimatedKb(value)
@@ -65,6 +66,20 @@ class AppCatalog(
     // entry is cached - LruCache throws when sizeOf changes its answer - so
     // it can't follow the render size, which the icon size and the display
     // density now move.
+    private fun automaticIconCacheKb(): Int =
+        ((Runtime.getRuntime().maxMemory() / 8) / 1024).toInt().coerceIn(8 * 1024, 64 * 1024)
+
+    fun setIconCacheKb(requestedKb: Int, lowRam: Boolean = false) {
+        val automatic = automaticIconCacheKb()
+        val next = when {
+            requestedKb <= 0 -> automatic
+            else -> requestedKb.coerceIn(1, 64 * 1024)
+        }.let { if (lowRam) it.coerceAtMost(8 * 1024) else it }
+        if (next == iconCacheKb) return
+        iconCacheKb = next
+        synchronized(renderLock) { iconCache.resize(next) }
+    }
+
     private fun estimatedKb(value: Drawable): Int {
         val width = value.intrinsicWidth.takeIf { it > 0 } ?: FALLBACK_ICON_PX
         val height = value.intrinsicHeight.takeIf { it > 0 } ?: FALLBACK_ICON_PX
@@ -640,6 +655,13 @@ class AppCatalog(
             )
         return runCatching { launcherApps.getShortcuts(query, user) ?: emptyList() }
             .getOrElse { emptyList() }
+            // Only the shortcuts of an activity in the app list: apps that
+            // change their icon through activity-aliases declare the same set
+            // on every alias (YouTube listed four "Search"), and launchers ask
+            // for an icon's shortcuts by its activity (#361).
+            .filter { s ->
+                s.activity.let { it == null || resolveActivity(it.packageName, it.className, user) != null }
+            }
     }
 
     fun shortcutsFor(packageName: String, userSerial: Long): List<android.content.pm.ShortcutInfo> {
@@ -932,7 +954,7 @@ class AppCatalog(
     companion object {
         // Bumped when a render changes how an icon looks for the same
         // settings, so the disk cache starts over.
-        const val DISK_FORMAT = 1
+        const val DISK_FORMAT = 2
 
         // Marks a Large icon's copy in a cache key.
         const val LARGE_KEY = "^large"

@@ -107,6 +107,11 @@
             android:label="@string/settings_launcher_label"
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.settings" />
+        <activity
+            android:name=".ui.CustomTransitionBuilderActivity"
+            android:exported="false"
+            android:label="@string/labs_custom_transition_builder"
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- Puts a "Supernova Settings" entry in every launcher's drawer;
              hideable via Hide apps. The target

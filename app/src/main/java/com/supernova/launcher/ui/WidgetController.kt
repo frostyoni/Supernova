@@ -8,6 +8,8 @@ import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
+import android.graphics.Typeface
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.SizeF
@@ -16,6 +18,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import com.google.android.material.slider.Slider
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,13 +33,23 @@ import com.supernova.launcher.data.ItemType
 import com.supernova.launcher.data.LauncherItem
 import com.supernova.launcher.data.LauncherModel
 import com.supernova.launcher.feed.FeaturedType
+import com.supernova.launcher.gesture.ActionShortcut
+import com.supernova.launcher.gesture.GestureAction
 import com.supernova.launcher.data.LauncherPrefs
 import com.supernova.launcher.data.LauncherRepository
+import com.supernova.launcher.data.WidgetStackMember
+import com.supernova.launcher.data.WidgetStacks
+import com.supernova.launcher.data.WidgetStyle
 import com.supernova.launcher.data.WorkspaceGeometry
 import com.supernova.launcher.databinding.ActivityLauncherBinding
 import com.supernova.launcher.runLogged
+import com.supernova.launcher.ui.settings.ColorSheet
+import com.supernova.launcher.ui.settings.SettingsCatalogue
+import com.supernova.launcher.ui.theme.PaletteFactory
+import com.supernova.launcher.ui.theme.ThemeEngine
 import com.supernova.launcher.widget.SupernovaWidgetHost
 import com.supernova.launcher.widget.SupernovaWidgetHostView
+import com.supernova.launcher.widget.hasScrollableContent
 import com.supernova.launcher.widget.WidgetFeatures
 import com.supernova.launcher.widget.WidgetResizeFrame
 import com.supernova.launcher.widget.WidgetSizing
@@ -62,6 +77,10 @@ class WidgetController(
         // An open feed pane covers the resize frame; a press there is the pane's.
         val feedOpen: Boolean
         fun currentCellSizePx(): Pair<Int, Int>
+
+        // A pop-up widget was just bound to an icon: the activity shows the
+        // one-time explainer, if it is due.
+        fun popupWidgetBound()
 
         // The home gesture detector saw a down that a widget has now claimed.
         fun cancelGesture(cancel: MotionEvent)
@@ -109,10 +128,24 @@ class WidgetController(
     // and so do its cached view and size. One left behind by a recreate or a
     // process death in between is reclaimed by sweepOrphanIds.
     fun releaseWidget(item: LauncherItem) {
-        val id = item.appWidgetId ?: return
-        appWidgetHost.deleteAppWidgetId(id)
-        lastReportedSizes.remove(id)
-        widgetHostViews.remove(id)
+        nativeWidgetViews.remove(item.id)
+        val ids = listOfNotNull(item.appWidgetId, item.popupWidget?.appWidgetId) +
+            item.widgetStack.mapNotNull { it.appWidgetId }
+        if (ids.isEmpty()) return
+        ids.forEach { id ->
+            appWidgetHost.deleteAppWidgetId(id)
+            lastReportedSizes.remove(id)
+            widgetHostViews.remove(id)
+            popupHostViews.remove(id)
+        }
+        stackContainers.remove(item.id)?.clearStack()
+    }
+
+    fun releaseWidgetId(widgetId: Int) {
+        appWidgetHost.deleteAppWidgetId(widgetId)
+        lastReportedSizes.remove(widgetId)
+        widgetHostViews.remove(widgetId)
+        popupHostViews.remove(widgetId)
     }
 
     // One host view per card widget, reused on every bind. The feed rebinds
@@ -162,6 +195,11 @@ class WidgetController(
         data class Restored(val itemId: String) : Target
         // Replace: the widget stands in for the desktop search bar.
         data object SearchBar : Target
+        // Add as a second member of an existing workspace widget stack.
+        data class Stack(val itemId: String) : Target
+        // An icon's pop-up widget. A direction binds that swipe to it, for
+        // the picker row that opened this.
+        data class Popup(val itemId: String, val down: Boolean? = null) : Target
     }
 
     // Kept in the view model: a dark-mode, font-size or language change
@@ -182,6 +220,12 @@ class WidgetController(
     // AppWidgetHostView leaves it blank until the provider redelivers its
     // RemoteViews, which flashed the whole screen after every drop.
     private val widgetHostViews = mutableMapOf<Int, AppWidgetHostView>()
+    // Stack containers, reused across page rebinds so members stop flashing.
+    private val stackContainers = mutableMapOf<String, WidgetStackView>()
+    private val nativeWidgetViews = mutableMapOf<String, com.supernova.launcher.ui.vitals.DeviceStatusView>()
+    // Pop-up widgets by host id: a second swipe shows the same view rather
+    // than a blank one while the provider redelivers.
+    private val popupHostViews = mutableMapOf<Int, AppWidgetHostView>()
 
     // Touch stream currently owned by a widget's own scrolling content, plus
     // the widget the finger went down on while it is still undecided.
@@ -235,11 +279,23 @@ class WidgetController(
                 abortPendingWidget()
                 Toast.makeText(activity, R.string.widget_provider_missing, Toast.LENGTH_SHORT).show()
             } else {
+                (pending.target as? Target.Restored)?.let { retryRestoredBinds(it.itemId) }
                 proceedToConfigure(info)
             }
         } else {
             abortPendingWidget()
         }
+    }
+
+    // After a reinstall and a restore the bind permission is gone, so no
+    // restored widget could be bound silently (#373). Allowed on one
+    // widget's tap ("Always allow"), the rest without a setup screen are
+    // bound now rather than each on its own tap or at the next start.
+    // Without that tick each try is refused and its id dropped, as before.
+    private fun retryRestoredBinds(tappedItemId: String) {
+        rebindsTried.clear()
+        rebindsTried += tappedItemId
+        rebindRestoredWidgets(viewModel.state.value.model)
     }
 
     private val configureWidgetLauncher = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -447,71 +503,315 @@ class WidgetController(
     fun showPaddingDialog(item: LauncherItem, widgetView: View) {
         val params = widgetView.layoutParams as? WorkspaceCanvas.WidgetParams
         val originalInset = params?.inset
-        val row = com.supernova.launcher.databinding.ItemSettingSliderBinding.inflate(activity.layoutInflater)
-        var value = viewModel.widgetPaddingDp(item)
+        val prefs = viewModel.state.value.prefs
+        val state = AppearanceState(item, prefs)
         fun preview(dp: Int) {
             params ?: return
             params.inset = activity.dp(dp)
             widgetView.requestLayout()
         }
-        fun render() {
-            row.settingValue.text = activity.getString(R.string.padding_dp_value, value)
-            row.settingSeek.progress = value
-            preview(value)
+        fun previewStyle() {
+            applyWidgetDecoration(
+                widgetView,
+                item.copy(
+                    widgetCornerRadius = state.cornerRadius,
+                    widgetBorderWidth = state.borderWidth,
+                    widgetBorderColor = state.borderColor.takeIf { it.isNotBlank() },
+                    widgetShadow = state.shadow,
+                    widgetShadowColor = state.shadowColor.takeIf { it.isNotBlank() }
+                )
+            )
         }
-        row.settingTitle.text = item.label.ifBlank { activity.getString(R.string.widget) }
-        row.settingSeek.max = LauncherRepository.MAX_WIDGET_PADDING_DP
-        row.settingSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                value = progress
-                render()
-            }
-
-            override fun onStartTrackingTouch(bar: android.widget.SeekBar) = Unit
-
-            override fun onStopTrackingTouch(bar: android.widget.SeekBar) = Unit
-        })
-        row.stepDown.setOnClickListener {
-            value = (value - 1).coerceAtLeast(0)
-            render()
-        }
-        row.stepUp.setOnClickListener {
-            value = (value + 1).coerceAtMost(LauncherRepository.MAX_WIDGET_PADDING_DP)
-            render()
-        }
-        render()
+        val scroll = ScrollView(activity).apply { addView(appearanceContent(state, ::preview, ::previewStyle)) }
         var committed = false
+        val title = activity.getString(
+            R.string.widget_appearance,
+            item.label.ifBlank { activity.getString(R.string.widget) }
+        )
         MaterialAlertDialogBuilder(activity)
-            .setTitle(R.string.padding)
-            .setView(row.root)
+            .setTitle(title)
+            .setView(scroll)
             .setPositiveButton(R.string.save) { _, _ ->
                 committed = true
-                viewModel.setWidgetPadding(item.id, value)
+                preview(state.padding)
+                viewModel.setWidgetPadding(
+                    item.id,
+                    state.padding.takeIf { it != prefs.widgetPadding }
+                )
+                viewModel.setWidgetStyle(item.id, state.style())
             }
-            .setNeutralButton(R.string.option_default) { _, _ ->
+            .setNeutralButton(R.string.widget_reset) { _, _ ->
                 committed = true
-                preview(viewModel.state.value.prefs.widgetPadding)
+                preview(prefs.widgetPadding)
+                applyWidgetDecoration(
+                    widgetView,
+                    item.copy(
+                        widgetCornerRadius = null,
+                        widgetBorderWidth = null,
+                        widgetBorderColor = null,
+                        widgetShadow = null,
+                        widgetShadowColor = null
+                    )
+                )
                 viewModel.setWidgetPadding(item.id, null)
+                viewModel.setWidgetStyle(item.id, WidgetStyle())
             }
             .setNegativeButton(R.string.cancel, null)
             .setOnDismissListener {
-                // Cancel, back or a tap outside: the preview goes back.
-                if (!committed && params != null && originalInset != null) {
-                    params.inset = originalInset
-                    widgetView.requestLayout()
+                if (!committed) {
+                    if (params != null && originalInset != null) {
+                        params.inset = originalInset
+                        widgetView.requestLayout()
+                    }
+                    applyWidgetDecoration(widgetView, item)
                 }
             }
             .showTracked()
             .window?.let { window ->
-                // In the half of the screen the widget isn't in, over a light
-                // dim, so the preview stays in view.
                 val location = IntArray(2).also(widgetView::getLocationOnScreen)
-                val widgetCenterY = location[1] + widgetView.height / 2
-                val upperHalf = widgetCenterY < activity.resources.displayMetrics.heightPixels / 2
+                val widgetCenterY = location[1] + widgetView.height / HALF
+                val upperHalf = widgetCenterY < activity.resources.displayMetrics.heightPixels / HALF
                 window.setGravity(if (upperHalf) Gravity.BOTTOM else Gravity.TOP)
                 window.setDimAmount(PREVIEW_DIALOG_DIM)
             }
+    }
+
+    private fun appearanceContent(
+        state: AppearanceState,
+        preview: (Int) -> Unit,
+        previewStyle: () -> Unit
+    ): LinearLayout {
+        val content = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                activity.dp(APPEARANCE_SIDE_PAD), activity.dp(APPEARANCE_TOP_PAD),
+                activity.dp(APPEARANCE_SIDE_PAD), 0
+            )
+        }
+        val size = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        appearanceColumn(
+            size, R.string.padding, LauncherRepository.MAX_WIDGET_PADDING_DP, state.padding
+        ) {
+            state.padding = it
+            preview(it)
+        }
+        appearanceColumn(
+            size, R.string.widget_corner_short,
+            LauncherRepository.MAX_WIDGET_RADIUS_DP, state.cornerRadius
+        ) {
+            state.cornerRadius = it
+            previewStyle()
+        }
+        content.addView(size)
+        val contrast = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        appearanceColumn(
+            contrast, R.string.widget_border_short,
+            LauncherRepository.MAX_WIDGET_BORDER_DP, state.borderWidth
+        ) {
+            state.borderWidth = it
+            previewStyle()
+        }
+        appearanceColumn(
+            contrast, R.string.widget_shadow_short,
+            LauncherRepository.MAX_WIDGET_SHADOW_DP, state.shadow
+        ) {
+            state.shadow = it
+            previewStyle()
+        }
+        content.addView(contrast)
+        content.addView(appearanceColors(state, previewStyle))
+        return content
+    }
+
+    private fun appearanceColors(state: AppearanceState, previewStyle: () -> Unit): LinearLayout {
+        val colors = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        appearanceColorChip(colors, R.string.widget_border_color, state.borderColor, Color.WHITE) {
+            state.borderColor = it
+            previewStyle()
+        }
+        appearanceColorChip(colors, R.string.widget_shadow_color, state.shadowColor, Color.BLACK) {
+            state.shadowColor = it
+            previewStyle()
+        }
+        return colors
+    }
+
+    private class AppearanceState(item: LauncherItem, private val prefs: LauncherPrefs) {
+        var padding = item.widgetPadding ?: prefs.widgetPadding
+        var cornerRadius = item.widgetCornerRadius ?: prefs.widgetCornerRadius
+        var borderWidth = item.widgetBorderWidth ?: prefs.widgetBorderWidth
+        var borderColor = item.widgetBorderColor.orEmpty().ifBlank { prefs.widgetBorderColor }
+        var shadow = item.widgetShadow ?: prefs.widgetShadow
+        var shadowColor = item.widgetShadowColor.orEmpty().ifBlank { prefs.widgetShadowColor }
+
+        fun style(): WidgetStyle = WidgetStyle(
+            cornerRadius = cornerRadius.takeIf { it != prefs.widgetCornerRadius },
+            borderWidth = borderWidth.takeIf { it != prefs.widgetBorderWidth },
+            borderColor = borderColor.takeIf { it.isNotBlank() && it != prefs.widgetBorderColor },
+            shadow = shadow.takeIf { it != prefs.widgetShadow },
+            shadowColor = shadowColor.takeIf { it.isNotBlank() && it != prefs.widgetShadowColor }
+        )
+    }
+
+    private fun appearanceColumn(
+        parent: LinearLayout,
+        title: Int,
+        max: Int,
+        value: Int,
+        onChange: (Int) -> Unit
+    ) {
+        val column = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, activity.dp(APPEARANCE_COLUMN_GAP), 0)
+        }
+        appearanceSlider(column, title, max, value, onChange)
+        parent.addView(
+            column,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT)
+        )
+    }
+
+    private fun appearanceSlider(
+        parent: LinearLayout,
+        title: Int,
+        max: Int,
+        value: Int,
+        onChange: (Int) -> Unit
+    ) {
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, activity.dp(APPEARANCE_ROW_TOP), 0, 0)
+        }
+        val label = TextView(activity).apply {
+            text = activity.getString(title)
+            textSize = APPEARANCE_TEXT_SP
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val current = TextView(activity).apply {
+            text = value.toString()
+            textSize = APPEARANCE_VALUE_TEXT_SP
+            setPadding(
+                activity.dp(APPEARANCE_VALUE_PAD_H), activity.dp(APPEARANCE_VALUE_PAD_V),
+                activity.dp(APPEARANCE_VALUE_PAD_H), activity.dp(APPEARANCE_VALUE_PAD_V)
+            )
+            background = GradientDrawable().apply {
+                cornerRadius = activity.dp(APPEARANCE_VALUE_RADIUS).toFloat()
+                setColor(APPEARANCE_VALUE_BG)
+            }
+        }
+        header.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT))
+        header.addView(current)
+        val slider = Slider(activity).apply {
+            valueFrom = 0f
+            valueTo = max.toFloat()
+            stepSize = 1f
+            this.value = value.coerceIn(0, max).toFloat()
+            trackHeight = activity.dp(APPEARANCE_TRACK_HEIGHT)
+            thumbRadius = activity.dp(APPEARANCE_THUMB_RADIUS)
+            haloRadius = activity.dp(APPEARANCE_HALO_RADIUS)
+            setPaddingRelative(
+                activity.dp(APPEARANCE_SLIDER_PAD), 0, activity.dp(APPEARANCE_SLIDER_PAD), 0
+            )
+            addOnChangeListener { _, progress, _ ->
+                current.text = progress.toInt().toString()
+                onChange(progress.toInt())
+            }
+        }
+        parent.addView(header)
+        parent.addView(
+            slider,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+    }
+
+    private fun renderColorChip(dot: View, label: TextView, color: String, default: Int) {
+        dot.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(LabelStyler.parseColor(color, default))
+            setStroke(activity.dp(APPEARANCE_DOT_STROKE), COLOR_DOT_STROKE)
+        }
+        label.text = SettingsCatalogue.colorLabel(activity, color, default)
+    }
+
+    private fun showColorPicker(title: Int, current: String, default: Int, onPicked: (String) -> Unit) {
+        val prefs = viewModel.state.value.prefs
+        val palette = PaletteFactory.resolve(
+            activity, prefs.paletteSource, prefs.paletteSeed,
+            ThemeEngine.accentColor(activity, prefs.accentColor)
+        )
+        ColorSheet(activity, palette, default).show(title, current, onPicked)
+    }
+
+    private fun appearanceColorChip(
+        parent: LinearLayout,
+        title: Int,
+        value: String,
+        default: Int,
+        onPicked: (String) -> Unit
+    ) {
+        val chip = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            isClickable = true
+            setPadding(
+                activity.dp(APPEARANCE_CHIP_PAD_H), activity.dp(APPEARANCE_CHIP_PAD_V),
+                activity.dp(APPEARANCE_CHIP_PAD_H), activity.dp(APPEARANCE_CHIP_PAD_V)
+            )
+            background = GradientDrawable().apply {
+                cornerRadius = activity.dp(APPEARANCE_CHIP_RADIUS).toFloat()
+                setColor(APPEARANCE_CHIP_BG)
+                setStroke(activity.dp(APPEARANCE_DOT_STROKE), APPEARANCE_CHIP_STROKE)
+            }
+        }
+        val titleView = TextView(activity).apply {
+            text = activity.getString(title)
+            textSize = APPEARANCE_CHIP_TITLE_SP
+            setTextColor(APPEARANCE_CHIP_TITLE_COLOR)
+        }
+        val line = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val dot = View(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                activity.dp(APPEARANCE_DOT), activity.dp(APPEARANCE_DOT)
+            )
+        }
+        val label = TextView(activity).apply {
+            textSize = APPEARANCE_CHIP_VALUE_SP
+            maxLines = 1
+        }
+        line.addView(dot)
+        line.addView(
+            label,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT).apply {
+                marginStart = activity.dp(APPEARANCE_GAP)
+            }
+        )
+        renderColorChip(dot, label, value, default)
+        chip.addView(titleView)
+        chip.addView(line)
+        chip.setOnClickListener {
+            showColorPicker(title, value, default) { picked ->
+                onPicked(picked)
+                renderColorChip(dot, label, picked, default)
+            }
+        }
+        parent.addView(
+            chip,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, APPEARANCE_WEIGHT).apply {
+                marginEnd = activity.dp(APPEARANCE_CHIP_GAP)
+            }
+        )
     }
 
     // Overlays a draggable resize frame on top of the widget's host view; the
@@ -541,6 +841,16 @@ class WidgetController(
             },
             snapDurationMs = Animations.duration(viewModel.state.value.prefs, RESIZE_SNAP_MS),
             units = units,
+            minSpanX = if (item.nativeWidgetKind.isNotEmpty()) {
+                com.supernova.launcher.data.NativeWidgets.minSpanX(item.nativeWidgetKind) * units
+            } else {
+                1
+            },
+            minSpanY = if (item.nativeWidgetKind.isNotEmpty()) {
+                com.supernova.launcher.data.NativeWidgets.minSpanY(item.nativeWidgetKind) * units
+            } else {
+                1
+            },
             onCommit = { cellX, cellY, spanX, spanY ->
                 val state = viewModel.state.value
                 val current = state.model.items.firstOrNull { it.id == item.id }
@@ -598,13 +908,119 @@ class WidgetController(
     }
 
     fun reportWidgetSize(item: LauncherItem, view: View) {
-        val widgetId = item.appWidgetId ?: return
-        val hostView = view as? AppWidgetHostView ?: return
-        if (view.width <= 0 || view.height <= 0) return
-        val size = SizeF(view.width.toFloat(), view.height.toFloat())
+        when (view) {
+            is WidgetStackView -> view.reportMemberSizes()
+            is AppWidgetHostView -> reportSize(item.appWidgetId ?: return, view, view.width, view.height)
+        }
+    }
+
+    // Called by WidgetStackView for every member, and by reportWidgetSize for
+    // single-widget items. Deduplicated so every layout pass doesn't spam the
+    // provider with size updates.
+    internal fun reportSize(widgetId: Int, hostView: AppWidgetHostView, widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        val size = SizeF(widthPx.toFloat(), heightPx.toFloat())
         if (lastReportedSizes[widgetId] == size) return
         lastReportedSizes[widgetId] = size
-        WidgetSizing.reportSize(hostView, view.width, view.height, activity.resources.displayMetrics.density)
+        WidgetSizing.reportSize(hostView, widthPx, heightPx, activity.resources.displayMetrics.density)
+    }
+
+    internal fun reportStackMemberSize(widgetId: Int, hostView: AppWidgetHostView, widthPx: Int, heightPx: Int) {
+        reportSize(widgetId, hostView, widthPx, heightPx)
+    }
+
+    // Host view reuse/exposure for the stack container. Members are cached in
+    // widgetHostViews so they survive page rebinds, and their corner radius is
+    // re-applied each time the container is reused.
+    fun stackMemberHostView(widgetId: Int): AppWidgetHostView? {
+        return widgetHostViews[widgetId]?.also { applyWidgetCornerRadius(it) } ?: run {
+            val info = appWidgetManager.getAppWidgetInfo(widgetId) ?: return null
+            createWidgetHostView(widgetId, info)?.also { widgetHostViews[widgetId] = it }
+        }
+    }
+
+    fun hasWidgetProvider(widgetId: Int): Boolean =
+        runCatching { appWidgetManager.getAppWidgetInfo(widgetId) != null }.getOrDefault(false)
+
+    // Persist a stack front change. The container already switched visually.
+    fun onStackFrontChanged(itemId: String, frontIndex: Int) {
+        viewModel.setWidgetStackFront(itemId, frontIndex)
+    }
+
+    fun animationDuration(baseMs: Long): Long = Animations.duration(viewModel.state.value.prefs, baseMs)
+
+    fun activeWidgetMember(item: LauncherItem): WidgetStackMember? = WidgetStacks.activeMember(item)
+
+    fun canAddToStack(item: LauncherItem): Boolean =
+        item.nativeWidgetKind.isEmpty() && WidgetStacks.canAdd(item)
+
+    fun trimMemory(level: Int) {
+        if (!viewModel.state.value.prefs.widgetMemorySaver) return
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) return
+        lastReportedSizes.clear()
+        stackContainers.values.forEach(WidgetStackView::trimInactiveMembers)
+        widgetHostViews.clear()
+        popupHostViews.clear()
+    }
+
+    // Long-press menu row: pick a widget to add to an existing stack.
+    fun showPickerForStack(item: LauncherItem) {
+        if (!canAddToStack(item)) {
+            Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val prefs = viewModel.state.value.prefs
+        val (cellWidth, cellHeight) = host.currentCellSizePx()
+        WidgetPickerSheet.show(
+            activity, cellWidth, cellHeight, prefs.gridCols, prefs.gridRows,
+            prefs = prefs,
+            onPicked = { info -> bind(info, Target.Stack(item.id)) },
+            icons = WidgetPickerIcons.of(viewModel.appCatalog())
+        )
+    }
+
+    // The icon's pop-up widget, hosted once and reused across shows: a fresh
+    // host view each time would blank and reload it, as it would a stack's.
+    fun popupHostView(item: LauncherItem): AppWidgetHostView? {
+        val widgetId = item.popupWidget?.appWidgetId ?: return null
+        val info = appWidgetManager.getAppWidgetInfo(widgetId)
+        if (info == null) {
+            popupHostViews.remove(widgetId)
+            return null
+        }
+        return popupHostViews.getOrPut(widgetId) {
+            createWidgetHostView(widgetId, info) ?: return null
+        }.also { applyWidgetCornerRadius(it) }
+    }
+
+    // The pop-up's row in Edit: the widget's own name, "Widget" when the
+    // provider is momentarily out of reach, null when the icon has none.
+    fun popupWidgetLabel(item: LauncherItem): String? {
+        val member = item.popupWidget ?: return null
+        val widget = activity.getString(R.string.widget)
+        val id = member.appWidgetId ?: return widget
+        val info = appWidgetManager.getAppWidgetInfo(id) ?: return widget
+        return info.loadLabel(activity.packageManager)?.toString()?.ifBlank { widget }
+    }
+
+    // The provider's own minimum size, in dp: what the pop-up opens at.
+    fun popupWidgetMinSize(item: LauncherItem): Pair<Int, Int> {
+        val id = item.popupWidget?.appWidgetId ?: return 0 to 0
+        val info = appWidgetManager.getAppWidgetInfo(id) ?: return 0 to 0
+        return info.minWidth to info.minHeight
+    }
+
+    // Picking an icon's pop-up widget. With a swipe direction, the picker row
+    // that asked binds that swipe to the pop-up too, after the bind.
+    fun showPickerForPopup(item: LauncherItem, down: Boolean? = null) {
+        val prefs = viewModel.state.value.prefs
+        val (cellWidth, cellHeight) = host.currentCellSizePx()
+        WidgetPickerSheet.show(
+            activity, cellWidth, cellHeight, prefs.gridCols, prefs.gridRows,
+            prefs = prefs,
+            onPicked = { info -> bind(info, Target.Popup(item.id, down)) },
+            icons = WidgetPickerIcons.of(viewModel.appCatalog())
+        )
     }
 
     // The one AppWidgetHostView factory: workspace items and feed cards both
@@ -628,9 +1044,35 @@ class WidgetController(
         return hostView
     }
 
+    private fun nativeWidgetView(item: LauncherItem): View {
+        val prefs = viewModel.state.value.prefs
+        nativeWidgetViews[item.id]?.let { view ->
+            view.update(item, prefs)
+            return view
+        }
+        return com.supernova.launcher.ui.vitals.DeviceStatusView(activity, item, prefs) { view, current ->
+            host.onWidgetLongPress(view, current)
+        }.also { nativeWidgetViews[item.id] = it }
+    }
+
     fun buildWidgetView(item: LauncherItem): View {
+        if (item.nativeWidgetKind.isNotEmpty()) return nativeWidgetView(item)
+        // A stack can outlive a missing primary: a restore may have bound a
+        // member while the primary still waits for its placeholder.
+        if (item.widgetStack.isNotEmpty()) {
+            return stackContainers[item.id]?.apply { updateMembers(item) } ?: run {
+                val container = WidgetStackView(
+                    activity,
+                    this,
+                    item
+                ) { view, currentItem -> host.onWidgetLongPress(view, currentItem) }
+                stackContainers[item.id] = container
+                container
+            }
+        }
+        stackContainers.remove(item.id)?.clearStack()
         val widgetId = item.appWidgetId ?: return fallbackWidgetView(item)
-        val hostView = widgetHostViews[widgetId]?.also(::applyWidgetCornerRadius)
+        val hostView = widgetHostViews[widgetId]?.also { applyWidgetCornerRadius(it, item) }
             ?: run {
                 val info = appWidgetManager.getAppWidgetInfo(widgetId) ?: return fallbackWidgetView(item)
                 createWidgetHostView(widgetId, info)?.also { widgetHostViews[widgetId] = it }
@@ -650,25 +1092,51 @@ class WidgetController(
     // Our host-view subclass re-asserts the clip after every RemoteViews
     // update, because API 31+ replaces a one-time outline with the
     // framework's own rounded-corner enforcement.
-    private fun applyWidgetCornerRadius(hostView: View) {
-        val radiusDp = viewModel.state.value.prefs.widgetCornerRadius
+    fun applyWidgetCornerRadius(hostView: View, item: LauncherItem? = null) {
+        val prefs = viewModel.state.value.prefs
+        val radiusDp = item?.widgetCornerRadius ?: prefs.widgetCornerRadius
         if (hostView is com.supernova.launcher.widget.SupernovaWidgetHostView) {
             hostView.cornerRadiusPx = if (radiusDp > 0) activity.dp(radiusDp).toFloat() else 0f
             return
         }
-        if (radiusDp > 0) {
-            hostView.outlineProvider = RoundedOutlineProvider(activity.dp(radiusDp).toFloat())
-            hostView.clipToOutline = true
-        } else {
-            hostView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-            hostView.clipToOutline = false
-        }
+        hostView.outlineProvider = RoundedOutlineProvider(activity.dp(radiusDp).toFloat())
+        hostView.clipToOutline = radiusDp > 0
+        hostView.invalidateOutline()
     }
 
     private class RoundedOutlineProvider(private val radiusPx: Float) : android.view.ViewOutlineProvider() {
         override fun getOutline(view: View, outline: android.graphics.Outline) {
             outline.setRoundRect(0, 0, view.width, view.height, radiusPx)
         }
+    }
+
+    fun applyWidgetDecoration(hostView: View, item: LauncherItem? = null) {
+        val prefs = viewModel.state.value.prefs
+        applyWidgetCornerRadius(hostView, item)
+        val density = activity.resources.displayMetrics.density
+        val borderWidth = ((item?.widgetBorderWidth ?: prefs.widgetBorderWidth) * density).toInt()
+        val borderColor = LabelStyler.parseColor(
+            item?.widgetBorderColor?.takeIf { it.isNotBlank() } ?: prefs.widgetBorderColor,
+            android.graphics.Color.WHITE
+        )
+        val cornerRadius = activity.dp(item?.widgetCornerRadius ?: prefs.widgetCornerRadius).toFloat()
+        hostView.foreground = if (borderWidth > 0) {
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.TRANSPARENT)
+                setStroke(borderWidth, borderColor)
+                setCornerRadius(cornerRadius)
+            }
+        } else {
+            null
+        }
+        val shadow = (item?.widgetShadow ?: prefs.widgetShadow) * density
+        hostView.elevation = shadow
+        val shadowColor = LabelStyler.parseColor(
+            item?.widgetShadowColor?.takeIf { it.isNotBlank() } ?: prefs.widgetShadowColor,
+            android.graphics.Color.BLACK
+        )
+        hostView.outlineSpotShadowColor = shadowColor
+        hostView.outlineAmbientShadowColor = shadowColor
     }
 
     // A widget with no live id: its name, and if its provider is installed, a
@@ -711,13 +1179,37 @@ class WidgetController(
 
     // Widgets and cards a restore left without a live id get a new one where
     // that takes no asking: the bind permission held, no setup screen needed.
-    // The rest wait on their placeholder's tap. Once per item a session, as a
-    // refused bind stays refused.
+    // The rest wait on their placeholder's tap. Once per item or member a
+    // session, as a refused bind stays refused.
     fun rebindRestoredWidgets(model: LauncherModel) {
         model.items
-            .filter { it.itemType == ItemType.WIDGET && it.appWidgetId == null }
+            .filter { it.itemType == ItemType.WIDGET }
             .forEach { item ->
-                rebindSilently(item.id, item.widgetProvider, item.userSerial) { viewModel.setWidgetId(item.id, it) }
+                if (item.appWidgetId == null) {
+                    rebindSilently(item.id, item.widgetProvider, item.userSerial) {
+                        viewModel.setWidgetId(item.id, it)
+                    }
+                }
+                item.widgetStack.forEachIndexed { index, member ->
+                    if (member.appWidgetId == null) {
+                        rebindSilently(
+                            "${item.id}:$index",
+                            member.provider,
+                            member.userSerial
+                        ) {
+                            viewModel.setWidgetStackMemberId(item.id, index, it)
+                        }
+                    }
+                }
+            }
+        // A pop-up widget's id is as install-specific as a stack member's.
+        model.items
+            .filter { it.itemType != ItemType.WIDGET && it.popupWidget?.appWidgetId == null }
+            .forEach { item ->
+                val member = item.popupWidget ?: return@forEach
+                rebindSilently("popup:${item.id}", member.provider, member.userSerial) {
+                    viewModel.setPopupWidgetId(item.id, it)
+                }
             }
         model.feedCards
             .filter { FeaturedType.fromName(it.featuredType) == FeaturedType.WIDGET && it.appWidgetId == null }
@@ -881,10 +1373,13 @@ class WidgetController(
     }
 
     fun isReconfigurable(item: LauncherItem): Boolean =
-        item.appWidgetId?.let(appWidgetManager::getAppWidgetInfo)?.let(WidgetFeatures::reconfigurable) == true
+        activeWidgetMember(item)
+            ?.appWidgetId
+            ?.let(appWidgetManager::getAppWidgetInfo)
+            ?.let(WidgetFeatures::reconfigurable) == true
 
     fun openWidgetSettings(item: LauncherItem) {
-        val widgetId = item.appWidgetId ?: return
+        val widgetId = activeWidgetMember(item)?.appWidgetId ?: return
         val opened = runCatching {
             appWidgetHost.startAppWidgetConfigureActivityForResult(
                 activity, widgetId, 0, REQUEST_RECONFIGURE_WIDGET, PendingStarts.options()
@@ -985,6 +1480,47 @@ class WidgetController(
                     pending.widgetId, info.provider?.flattenToString().orEmpty()
                 )
             }
+            is Target.Stack -> {
+                val stackItem = viewModel.state.value.model.items.firstOrNull { it.id == target.itemId }
+                if (stackItem == null || !canAddToStack(stackItem)) {
+                    WidgetAddTrail.fail("stack full or gone before placing", launcherState())
+                    abortPendingWidget()
+                    Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
+                    return
+                }
+                viewModel.addWidgetToStack(
+                    target.itemId,
+                    pending.widgetId,
+                    info.provider?.flattenToString().orEmpty(),
+                    serialOf(info.profile)
+                )
+            }
+            is Target.Popup -> {
+                val popupItem = viewModel.state.value.model.items.firstOrNull { it.id == target.itemId }
+                if (popupItem == null) {
+                    WidgetAddTrail.fail("icon gone before pop-up widget placed", launcherState())
+                    abortPendingWidget()
+                    Toast.makeText(activity, R.string.widget_bind_failed, Toast.LENGTH_SHORT).show()
+                    return
+                }
+                val previous = popupItem.popupWidget?.appWidgetId
+                viewModel.setPopupWidget(
+                    target.itemId,
+                    pending.widgetId,
+                    info.provider?.flattenToString().orEmpty(),
+                    serialOf(info.profile)
+                )
+                if (previous != null && previous != pending.widgetId) releaseWidgetId(previous)
+                if (target.down != null) {
+                    viewModel.setSwipeAction(
+                        target.itemId,
+                        ActionShortcut.encode(GestureAction.SHOW_POPUP_WIDGET),
+                        activity.getString(R.string.action_popup_widget),
+                        target.down
+                    )
+                }
+                host.popupWidgetBound()
+            }
         }
         reboundIds += pending.widgetId
         pendingWidget = null
@@ -1013,6 +1549,35 @@ class WidgetController(
         // The dim behind the padding dialog, which previews on the home screen.
         private const val PREVIEW_DIALOG_DIM = 0.15f
         private const val FALLBACK_PADDING_DP = 8
+        private const val COLOR_DOT_STROKE = 0x33FFFFFF
+        private const val APPEARANCE_SIDE_PAD = 24
+        private const val APPEARANCE_TOP_PAD = 4
+        private const val APPEARANCE_ROW_TOP = 8
+        private const val APPEARANCE_TEXT_SP = 15f
+        private const val APPEARANCE_VALUE_TEXT_SP = 13f
+        private const val APPEARANCE_WEIGHT = 1f
+        private const val APPEARANCE_TRACK_HEIGHT = 4
+        private const val APPEARANCE_THUMB_RADIUS = 9
+        private const val APPEARANCE_HALO_RADIUS = 20
+        private const val APPEARANCE_SLIDER_PAD = 8
+        private const val APPEARANCE_VALUE_PAD_H = 10
+        private const val APPEARANCE_VALUE_PAD_V = 4
+        private const val APPEARANCE_VALUE_RADIUS = 12
+        private const val APPEARANCE_VALUE_BG = 0x22FFFFFF
+        private const val APPEARANCE_CHIP_PAD_H = 12
+        private const val APPEARANCE_CHIP_PAD_V = 8
+        private const val APPEARANCE_CHIP_RADIUS = 14
+        private const val APPEARANCE_CHIP_BG = 0x14FFFFFF
+        private const val APPEARANCE_CHIP_STROKE = 0x1FFFFFFF
+        private const val APPEARANCE_CHIP_TITLE_SP = 12f
+        private const val APPEARANCE_CHIP_TITLE_COLOR = 0xB3FFFFFF.toInt()
+        private const val APPEARANCE_CHIP_VALUE_SP = 14f
+        private const val APPEARANCE_CHIP_GAP = 8
+        private const val APPEARANCE_DOT = 18
+        private const val APPEARANCE_DOT_STROKE = 1
+        private const val APPEARANCE_GAP = 8
+        private const val APPEARANCE_COLUMN_GAP = 8
+        private const val HALF = 2
 
         // One thread for every host view's inflation, shared by the activity
         // instances a recreate makes.

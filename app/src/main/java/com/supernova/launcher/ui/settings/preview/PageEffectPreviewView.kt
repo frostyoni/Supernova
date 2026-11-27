@@ -7,6 +7,8 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import com.supernova.launcher.data.CustomTransition
+import com.supernova.launcher.data.CustomTransitionStore
 import com.supernova.launcher.ui.PageTransformers
 import com.supernova.launcher.ui.ScrollEffect
 
@@ -29,6 +31,10 @@ class PageEffectPreviewView(
     }
 
     private var effect: ScrollEffect = ScrollEffect.NONE
+    private var custom: CustomTransition? = null
+
+    // Where the loop has got to, 0..1: the builder's timeline playhead.
+    var onProgress: ((Float) -> Unit)? = null
     private val ease = AccelerateDecelerateInterpolator()
     // How far the fake drag has gone, in pixels, toward the second page.
     private var dragged = 0f
@@ -64,14 +70,22 @@ class PageEffectPreviewView(
     }
 
     fun show(effect: ScrollEffect) {
-        if (effect != this.effect) {
+        show(effect, custom = null, replay = true)
+    }
+
+    // The builder's live preview: a spec that is not saved yet, and edits
+    // that should not restart the loop on every drag.
+    fun show(effect: ScrollEffect, custom: CustomTransition?, replay: Boolean) {
+        val spec = custom ?: if (effect == ScrollEffect.CUSTOM) CustomTransitionStore.load(context) else null
+        if (effect != this.effect || spec != this.custom) {
             this.effect = effect
+            this.custom = spec
             (pager.getChildAt(0) as? RecyclerView)?.let { recycler ->
                 for (index in 0 until recycler.childCount) PageTransformers.resetTransforms(recycler.getChildAt(index))
             }
-            pager.setPageTransformer(PageTransformers.forEffect(effect))
+            pager.setPageTransformer(PageTransformers.forEffect(effect, spec))
         }
-        replay()
+        if (replay) replay()
     }
 
     // From the first page again.
@@ -102,6 +116,7 @@ class PageEffectPreviewView(
             t < 2 * REST_MS + SWIPE_MS -> 1f
             else -> 1f - ease.getInterpolation((t - 2 * REST_MS - SWIPE_MS) / SWIPE_MS.toFloat())
         } * width
+        if (width > 0f) onProgress?.invoke(target / width)
         val moves = width > 0f && target != dragged && (pager.isFakeDragging || pager.beginFakeDrag())
         if (moves) {
             // A drag toward the next page moves the finger left: negative.

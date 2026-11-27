@@ -41,6 +41,14 @@ enum class ContainerType {
     FOLDER
 }
 
+// One member of a workspace widget stack. Defaults keep old JSON decoding.
+@Serializable
+data class WidgetStackMember(
+    val appWidgetId: Int? = null,
+    val provider: String = "",
+    val userSerial: Long = 0L
+)
+
 @Serializable
 data class LauncherItem(
     val id: String,
@@ -76,6 +84,27 @@ data class LauncherItem(
     // Widgets only, per-widget padding: this widget's inset in dp
     // inside its cells. Null follows the Widget padding setting.
     val widgetPadding: Int? = null,
+    val widgetCornerRadius: Int? = null,
+    val widgetBorderWidth: Int? = null,
+    val widgetBorderColor: String? = null,
+    val widgetShadow: Int? = null,
+    val widgetShadowColor: String? = null,
+    // Widgets only: the additional widgets in a stack and which one is in front.
+    // widgetStackFront is 0 for the primary appWidgetId, or 1..n for
+    // widgetStack[index - 1]. Defaults keep pre-stack JSON intact.
+    val widgetStack: List<WidgetStackMember> = emptyList(),
+    val widgetStackFront: Int = 0,
+    // Widgets only: a launcher-drawn widget ("vitals") instead of an
+    // AppWidgetProvider host. Empty on every external widget.
+    val nativeWidgetKind: String = "",
+    // Any item: a widget peeked at by swiping the icon, in a pop-up anchored
+    // at it. The same member shape as a stack's, so restore, backup and
+    // release treat it alike; null when the icon has none.
+    val popupWidget: WidgetStackMember? = null,
+    // Any item: the pop-up's own card size, in dp. Null opens at the
+    // widget's minimum size.
+    val popupWidthDp: Int? = null,
+    val popupHeightDp: Int? = null,
     // Widgets only: cellX/cellY/spanX/spanY count half cells, for a widget
     // placed or sized with subgrid positioning on. WorkspaceGeometry.itemRect
     // reads it; nothing else should use those four fields raw.
@@ -199,6 +228,25 @@ data class LauncherPrefs(
     val desktopPaddingV: Int = 12,
     val desktopLocked: Boolean = false,
     val dockEnabled: Boolean = true,
+    // Fill empty dock slots with the apps used most recently.
+    val dockSuggestions: Boolean = false,
+    // Fewer animations and no heavy glass: for older or slower phones.
+    val lowSpec: Boolean = false,
+    // The drawer's fast scroller sits on the left.
+    val leftHanded: Boolean = false,
+    // The drawer list starts lower, leaving room above it.
+    val drawerBottomShift: Boolean = false,
+    // The glass surface's optics (dock Liquid background + preview).
+    val glassTone: com.supernova.launcher.ui.GlassTone = com.supernova.launcher.ui.GlassTone.AUTO,
+    val glassBackdrop: com.supernova.launcher.ui.GlassBackdrop =
+        com.supernova.launcher.ui.GlassBackdrop.AUTO,
+    val glassThickness: Int = 14,
+    val glassBlur: Int = 9,
+    val glassDensity: Int = 28,
+    val glassSpecular: Int = 40,
+    val glassFresnel: Int = 55,
+    val glassDispersion: Int = 2,
+    val glassLight: Int = 225,
     // Dock rank space is page * dockCount + slot; extra pages swipe in place.
     val dockPages: Int = 1,
     val dockBgStyle: DockBgStyle = DockBgStyle.NONE,
@@ -279,6 +327,7 @@ data class LauncherPrefs(
     val drawerBgOpacity: Float = 1f,
     // On by default.
     val drawerFastScroller: Boolean = true,
+    val drawerAlphabetIndex: Boolean = false,
     // Overscrolling past the bottom of the drawer list opens global search.
     val drawerPullToSearch: Boolean = false,
     // Open App Drawer options, for a swipe up bound to the drawer: a
@@ -373,6 +422,19 @@ data class LauncherPrefs(
     // Drop shadow under the folder card. Off flattens it onto the wallpaper,
     // which is what a translucent folder surface usually wants.
     val folderShadow: Boolean = true,
+    // Its spread in dp (the card's elevation), its colour ("" = the default)
+    // and an optional border.
+    val folderShadowSpread: Int = 8,
+    val folderShadowColor: String = "",
+    val folderBorderWidth: Int = 0,
+    val folderBorderColor: String = "",
+    // A separate look for a folder opened inside another one, so a subfolder
+    // does not blend into its parent.
+    val subfolderDistinct: Boolean = false,
+    val subfolderShadowSpread: Int = 8,
+    val subfolderShadowColor: String = "",
+    val subfolderBorderWidth: Int = 0,
+    val subfolderBorderColor: String = "",
     // VERTICAL scrolls the folder grid; HORIZONTAL, the default, pages it
     // (FolderScroll).
     val folderScroll: FolderScroll = FolderScroll.HORIZONTAL,
@@ -406,6 +468,15 @@ data class LauncherPrefs(
     val styleConfig: String = "",
     // Corner clip radius for widget host views in dp; 0 = no clip.
     val widgetCornerRadius: Int = 16,
+    val widgetBorderWidth: Int = 0,
+    val widgetBorderColor: String = "",
+    val widgetShadow: Int = 0,
+    val widgetShadowColor: String = "",
+    val lowRam: Boolean = false,
+    val widgetMemorySaver: Boolean = true,
+    val iconCacheKb: Int = 0,
+    val vitalsCpu: Boolean = false,
+    val vitalsRefreshSec: Int = 15,
     val showScrims: Boolean = false,
     val wallpaperZoom: Boolean = true,
     // New installs go on the home screen. On by default.
@@ -417,8 +488,12 @@ data class LauncherPrefs(
     val labelSingleLine: Boolean = true,
     // With two-line labels, drawer and folder rows keep room for a second
     // line even when none of their labels wraps, so every row of icons is
-    // spaced the same (#347). Off by default.
+    // spaced the same (#347). Off by default. labelEvenRows is v0.2.9's one
+    // switch for both, read as both until either page's switch is used
+    // (LabelStyler.evenRowsWrites).
     val labelEvenRows: Boolean = false,
+    val drawerEvenRows: Boolean = false,
+    val folderEvenRows: Boolean = false,
     val dockInfiniteScroll: Boolean = false,
     // When on, the dock follows iconScale and the dock scale slider hides.
     // On by default.
@@ -547,6 +622,11 @@ data class LauncherPrefs(
     val feedShowMedia: Boolean = true,
     val feedShowCalendar: Boolean = false,
     val feedShowContacts: Boolean = false,
+    // The most-opened apps, from the launcher's own launch counts.
+    val feedShowUsage: Boolean = false,
+    val feedShowNotifications: Boolean = false,
+    // The one-time pop-up widget explainer has been shown.
+    val seenPopupWidgetHint: Boolean = false,
     // How many rows of suggested-shortcut pills the feed shows
     // ("Suggested shortcuts rows"), 1..3.
     val feedShortcutRows: Int = 1,
@@ -704,7 +784,19 @@ data class BackupPayload(
     val version: Int = 1,
     val exportedAtEpochMs: Long,
     val model: LauncherModel,
-    val prefs: LauncherPrefs
+    val prefs: LauncherPrefs,
+    // The Labs custom transition, as its JSON. Null only in a backup written
+    // before it existed, which leaves the current one alone; blank means there
+    // was none, and a restore clears it. A backup restores a known state, and
+    // the transition the home swipes with is part of that state.
+    val customTransition: String? = null,
+    // The custom label font's file, base64: null in an export taken before
+    // it existed and in one taken with no font stored. A restore leaves the
+    // installed font alone for null and removes it for a blank string.
+    val customFontBase64: String? = null,
+    // The Labs saved transition presets, as one JSON array; null in a backup
+    // written before them, blank when there were none.
+    val customTransitionPresets: String? = null
 )
 
 // Serializable for AppListCache, the drawer's list kept between runs.

@@ -1,6 +1,7 @@
 package com.supernova.launcher.notification
 
 import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ComponentName
@@ -17,6 +18,16 @@ import kotlinx.coroutines.flow.StateFlow
 // One notification line for the item popup menu: title/text plus the tap
 // intent. Bounded to PREVIEWS_PER_APP entries per app key.
 data class NotificationPreview(
+    val title: String,
+    val text: String,
+    val contentIntent: PendingIntent?,
+    val postTime: Long
+)
+
+// One badged notification, flattened for the feed's glance card. Read-only:
+// the launcher never dismisses or replies from here.
+data class NotificationGlance(
+    val appKey: String,
     val title: String,
     val text: String,
     val contentIntent: PendingIntent?,
@@ -151,8 +162,8 @@ class SupernovaNotificationListener : NotificationListenerService() {
             number = notification.number,
             isGroupSummary = (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0,
             canShowBadge = canShowBadge,
-            clearable = sbn.isClearable,
             ongoing = sbn.isOngoing,
+            defaultChannel = notification.channelId == NotificationChannel.DEFAULT_CHANNEL_ID,
             hasContent = !extras.getCharSequence(Notification.EXTRA_TITLE).isNullOrBlank() ||
                 !extras.getCharSequence(Notification.EXTRA_TEXT).isNullOrBlank(),
             groupKey = sbn.groupKey.orEmpty()
@@ -263,5 +274,18 @@ class SupernovaNotificationListener : NotificationListenerService() {
 
         fun previewsFor(packageName: String, userHash: Int): List<NotificationPreview> =
             previews["$userHash/$packageName"].orEmpty()
+
+        // The newest badged notifications across apps, newest first. Only the
+        // ones kept for the badge previews - the same privacy boundary: an app
+        // with no badge contributes nothing.
+        fun glance(): List<NotificationGlance> =
+            previews.entries
+                .flatMap { (key, list) ->
+                    list.map { NotificationGlance(key, it.title, it.text, it.contentIntent, it.postTime) }
+                }
+                .sortedByDescending { it.postTime }
+                .take(GLANCE_LIMIT)
+
+        private const val GLANCE_LIMIT = 6
     }
 }

@@ -73,6 +73,7 @@ class ShortcutPlacer(
                 cell
             )
             ShortcutTarget.Activities -> showActivitiesPicker(cell)
+            is ShortcutTarget.NativeWidget -> addNativeWidget(target, cell)
         }
     }
 
@@ -91,6 +92,21 @@ class ShortcutPlacer(
         val at = landing(cell) ?: return
         viewModel().addIntentItemToWorkspace(
             intentUri, label, iconBase64, at.page, at.cellX, at.cellY, at.workspaceX, at.workspaceY, at.displace
+        )
+    }
+
+    private fun addNativeWidget(target: ShortcutTarget.NativeWidget, cell: DropCell?) {
+        var landed: DropCell? = cell
+        if (landed == null) {
+            TappedPlacement.place(viewModel(), viewModel().state.value.currentPage, target.spanX, target.spanY) {
+                landed = DropCell(it.page, it.cellX, it.cellY)
+            }
+        }
+        val at = landed ?: return
+        viewModel().addNativeWidget(
+            at.page, at.cellX, at.cellY, target.kind,
+            activity.getString(com.supernova.launcher.R.string.native_widget_device_status),
+            target.spanX, target.spanY
         )
     }
 

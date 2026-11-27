@@ -58,6 +58,10 @@ object FeedAddSheet {
             viewModel.set(Pref.feedShowContacts, it)
             if (it) requestContacts()
         }
+        // No access to ask for: the counts are the launcher's own.
+        ready(binding.readyUsage, binding.readyUsageSwitch, prefs.feedShowUsage) {
+            viewModel.set(Pref.feedShowUsage, it)
+        }
         dialog.show()
     }
 }

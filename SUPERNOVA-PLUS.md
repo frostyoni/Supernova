@@ -23,6 +23,23 @@ edges known · **dropped** = considered and deliberately not done.
   The action is only offered on folder icons; home gestures and standalone action
   icons cannot select it.
 
+- **Folder look** — *stable*. The window group controls the card's shadow
+  spread (its elevation, 0–24dp) and colour, plus a border width and colour.
+  *Different look inside folders* gives a folder opened inside another its own
+  shadow spread/colour and border, so a subfolder stands out from its parent;
+  off, it uses the folder look. Defaults keep the old look (shadow on, 8dp,
+  no border). The drawer folder and private space take the folder look.
+
+- **Nested folders** — *experimental*. A folder inside a folder, on the home
+  screen or the dock: dragging a folder onto another nests it (a folder cannot
+  be dropped into itself or into a folder it contains). The child opens as its
+  own card above the parent, with a small folder mark beside its name; the
+  parent stays behind it, a tap outside or Back closes the front card, and Home
+  closes the stack. A nested folder's last member takes its place in the parent
+  (the two-app rule, all the way up); removing a folder takes its whole subtree
+  with it; a folder's preview recurses, so a folder containing a folder shows a
+  little folder in its icon.
+
 ## Search
 
 - **Not a second drawer** — *stable*. The empty search window shows recent
@@ -79,11 +96,29 @@ edges known · **dropped** = considered and deliberately not done.
 
 - **Widget stacks** — *experimental*. A workspace cell can hold up to **12**
   widgets. Swipe to switch (direction-aware slide, dots with a counter past seven,
-  a light haptic), long-press to add another, and a **Manage stack** sheet listing
-  every member in order (move up/down, remove with the widget id released, add,
-  front marked). A member that scrolls sideways itself keeps the touch stream.
-  Stored as the primary widget plus `widgetStack` members; restore, orphan sweep,
-  page signature and backups all know about them.
+  a light haptic, reduced-motion and animation-speed aware, rapid-swipe safe,
+  accessible next/previous actions), long-press to add another, and a **Manage
+  stack** sheet listing every member in order (move up/down, remove with the
+  widget id released, add, front marked). A member that scrolls sideways itself
+  keeps the touch stream. Stored as the primary widget plus `widgetStack`
+  members; restore, orphan sweep, page signature and backups all know about
+  them. The front is kept on its own widget across reorder/remove, unbound
+  restores and missing providers; duplicate widget ids are rejected; app
+  info/settings and export label target the visible member; adding stops at the
+  total 12-member bound; cached host views and stack containers are reused;
+  only the active member and its neighbours are inflated; hidden members pause
+  RemoteViews updates, latest updates are coalesced, and memory pressure trims
+  inactive hosts.
+- **Per-widget appearance**: long-press a widget or widget stack → **Style & padding**
+  to override corner radius, border width/color, shadow, shadow color, and
+  padding for that cell alone; **Reset** returns it to the global settings.
+  Colors open the normal color picker, not a hex field.
+- **Device status** — *new*. A native Vitals widget in the Supernova picker group:
+  battery ring with charge time, temperature sparkline, memory and storage,
+  uptime, and an optional CPU sparkline (Labs → CPU graph). 2×2 and 4×2 layouts,
+  theme accent with normal/warm/critical colouring, fade-down graph fills, live
+  updates while attached, and per-widget style/padding. Tap the ring for battery,
+  the bars for device care; long-press for the launcher menu.
 - **Pop-up widget** — *stable*. A home icon can carry a widget it peeks at on a
   swipe: a card opens at the icon — above it, below when there is no room above,
   beside it in landscape — holding the widget itself, so its taps and scrolling

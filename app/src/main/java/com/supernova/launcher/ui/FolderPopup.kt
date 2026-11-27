@@ -15,6 +15,7 @@ import android.widget.PopupWindow
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
+import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.GridLayoutManager
 import com.supernova.launcher.data.LauncherItem
 import com.supernova.launcher.databinding.PopupFolderBinding
@@ -47,14 +48,15 @@ class FolderPopup(private val context: Context) {
         // folderShowName pref: hides the title row, its menu button too. The
         // folder's long-press menu still has what that menu held.
         showTitle: Boolean = true,
+        // A folder inside another: a small folder mark beside the name, so a
+        // nested card is not mistaken for a top-level one.
+        nestedFolder: Boolean = false,
         // folderShowCount pref: the number of apps beside the name.
         showCount: Boolean = false,
-        // folderShadow pref: the card's own elevation, not the window's - the
-        // popup background is transparent, so the layout's 8dp is the shadow
-        // anyone actually sees. Matches the menus; the window fills the screen,
-        // so the only thing that could cut this shadow off is the card sitting
-        // too close to the window's edge, which the margin below covers.
-        shadow: Boolean = true,
+        // The card's own shadow and border: spread (the card's elevation),
+        // shadow colour, and an optional stroke. The window's background is
+        // transparent, so the card's elevation is the shadow anyone sees.
+        look: FolderLook = FolderLook(),
         // Animations.enabled: false skips the open/close transition.
         animate: Boolean = true,
         // Duration multiplier from the animation-speed pref.
@@ -69,11 +71,20 @@ class FolderPopup(private val context: Context) {
         onRename: (String) -> Unit,
         // The title row's overflow button, handed over to anchor a menu on.
         onMenu: ((View) -> Unit)? = null,
+        // Called as the card starts to close (the scrim tap), before the
+        // collapse animation: a nested folder's parent can come forward in
+        // the same beat. Back and other dismiss paths call onDismiss only.
+        onClosing: (() -> Unit)? = null,
         onDismiss: (() -> Unit)? = null,
         // The screen y the card stays above: the dock's top, so a folder
         // opened from the dock or the home grid never covers the dock's
         // icons. Null leaves the whole screen to it.
-        keepAboveScreenY: Int? = null
+        keepAboveScreenY: Int? = null,
+        // The view whose window hosts the popup. The anchor is in the
+        // activity's window normally; a folder opened from inside another
+        // folder has an anchor in that folder's window, and anchoring the
+        // new card to a window that is going away was a BadToken crash.
+        windowAnchor: View = anchor
     ): PopupWindow {
         // A drawer folder can be opened with the drawer's search keyboard up;
         // the card takes focus and would drop it a step late otherwise.
@@ -81,6 +92,10 @@ class FolderPopup(private val context: Context) {
 
         val binding = PopupFolderBinding.inflate(LayoutInflater.from(context))
         binding.folderTitle.setText(title)
+        var titleDirty = false
+        binding.folderTitle.doAfterTextChanged { text ->
+            if (text?.toString() != title) titleDirty = true
+        }
 
         if (cornerRadiiDp != null) {
             // Style-engine corners replace the stock drawable outright.
@@ -97,6 +112,23 @@ class FolderPopup(private val context: Context) {
                 (binding.folderCard.background?.mutate() as? GradientDrawable)?.setColor(color)
             }
         }
+        // The card's shadow: elevation is its spread; its colour is settable
+        // from Android 9 (the app's floor). The border is a stroke on the
+        // same shape, so the corners follow it.
+        binding.folderCard.elevation = if (look.shadow) context.dp(look.shadowSpreadDp).toFloat() else 0f
+        if (look.shadow) {
+            // The stored colour or the default: the settings' swatch shows
+            // the same colour the card draws with.
+            val shadow = LabelStyler.parseColor(look.shadowColor, FOLDER_SHADOW_COLOR_DEFAULT)
+            binding.folderCard.outlineAmbientShadowColor = shadow
+            binding.folderCard.outlineSpotShadowColor = shadow
+        }
+        if (look.borderWidthDp > 0) {
+            (binding.folderCard.background?.mutate() as? GradientDrawable)?.setStroke(
+                context.dp(look.borderWidthDp),
+                LabelStyler.parseColor(look.borderColor, FOLDER_BORDER_COLOR_DEFAULT)
+            )
+        }
         // The title row reads on the card's own color: a fixed hint was white
         // on the light theme's white card, so an unnamed folder showed nothing.
         val text = textColor ?: context.getColor(com.supernova.launcher.R.color.textPrimary)
@@ -104,6 +136,9 @@ class FolderPopup(private val context: Context) {
         binding.folderTitle.setHintTextColor(androidx.core.graphics.ColorUtils.setAlphaComponent(text, HINT_ALPHA))
         binding.folderCount.setTextColor(androidx.core.graphics.ColorUtils.setAlphaComponent(text, COUNT_ALPHA))
         binding.folderEditButton.imageTintList = android.content.res.ColorStateList.valueOf(text)
+        binding.folderNestedIcon.imageTintList = android.content.res.ColorStateList.valueOf(text)
+        binding.folderNestedIcon.visibility =
+            if (showTitle && nestedFolder) View.VISIBLE else View.GONE
         binding.folderAction.setTextColor(text)
         binding.folderTitle.visibility = if (showTitle) View.VISIBLE else View.GONE
         if (!titleEditable) {
@@ -168,7 +203,6 @@ class FolderPopup(private val context: Context) {
             }
         }
 
-        if (!shadow) binding.folderCard.elevation = 0f
 
         binding.folderGrid.adapter = adapter
         adapter.submit(members)
@@ -245,11 +279,12 @@ class FolderPopup(private val context: Context) {
         var closing = false
         fun animateClose() {
             if (closing) return
+            closing = true
+            onClosing?.invoke()
             if (!animate) {
                 popup.dismiss()
                 return
             }
-            closing = true
             binding.root.animate().alpha(0f).setDuration((CLOSE_MS * speed).toLong()).start()
             binding.folderCard.animate()
                 .scaleX(openScale).scaleY(openScale)
@@ -302,7 +337,7 @@ class FolderPopup(private val context: Context) {
 
         popup.setOnDismissListener {
             val newName = binding.folderTitle.text?.toString().orEmpty()
-            if (newName.isNotBlank() && newName != title) onRename(newName)
+            if (titleDirty && newName.isNotBlank() && newName != title) onRename(newName)
             onDismiss?.invoke()
         }
 
@@ -368,7 +403,7 @@ class FolderPopup(private val context: Context) {
         }
 
         if (immersive) layOutInScreen(popup, binding.root)
-        popup.showAtLocation(anchor, Gravity.CENTER, 0, 0)
+        popup.showAtLocation(windowAnchor, Gravity.CENTER, 0, 0)
         if (immersive) layOutBehindBars(binding.root)
         return popup
     }

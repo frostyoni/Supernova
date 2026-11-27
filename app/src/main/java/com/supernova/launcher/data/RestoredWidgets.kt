@@ -8,19 +8,39 @@ internal object RestoredWidgets {
 
     // What the import's message counts: widgets and widget cards with no id.
     fun needingRebind(model: LauncherModel): Int =
-        model.items.count { it.itemType == ItemType.WIDGET && it.appWidgetId == null } +
-            model.feedCards.count { it.widgetProvider != null && it.appWidgetId == null }
+        model.items.sumOf { item ->
+            if (item.itemType == ItemType.WIDGET && item.nativeWidgetKind.isEmpty()) {
+                (if (item.appWidgetId == null) 1 else 0) +
+                    item.widgetStack.count { it.appWidgetId == null }
+            } else {
+                if (item.popupWidget != null && item.popupWidget.appWidgetId == null) 1 else 0
+            }
+        } + model.feedCards.count { it.widgetProvider != null && it.appWidgetId == null }
 
     fun withStaleCleared(
         model: LauncherModel,
         widgetBound: (appWidgetId: Int, provider: String?) -> Boolean
     ): LauncherModel = model.copy(
         items = model.items.map { item ->
-            val id = item.appWidgetId
-            if (item.itemType == ItemType.WIDGET && id != null && !widgetBound(id, item.widgetProvider)) {
-                item.copy(appWidgetId = null)
-            } else {
-                item
+            if (item.itemType != ItemType.WIDGET) {
+                val member = item.popupWidget ?: return@map item
+                val id = member.appWidgetId
+                return@map if (id != null && !widgetBound(id, member.provider)) {
+                    item.copy(popupWidget = member.copy(appWidgetId = null))
+                } else {
+                    item
+                }
+            }
+            val primary = item.appWidgetId
+            val clearedPrimary = primary != null && !widgetBound(primary, item.widgetProvider)
+            val clearedStack = item.widgetStack.map { member ->
+                val id = member.appWidgetId
+                if (id != null && !widgetBound(id, member.provider)) member.copy(appWidgetId = null) else member
+            }
+            when {
+                clearedPrimary -> item.copy(appWidgetId = null, widgetStack = clearedStack)
+                clearedStack != item.widgetStack -> item.copy(widgetStack = clearedStack)
+                else -> item
             }
         },
         feedCards = model.feedCards.map { card ->

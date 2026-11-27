@@ -72,6 +72,9 @@ object EnumLabels {
         GestureAction.ASSISTANT -> R.string.action_assistant
         GestureAction.LAUNCH_APP -> R.string.action_launch_app
         GestureAction.LAUNCH_SHORTCUT -> R.string.action_launch_shortcut
+        GestureAction.LAUNCH_FOLDER_ITEM -> R.string.action_folder_item
+        GestureAction.REACHABILITY -> R.string.action_reachability
+        GestureAction.SHOW_POPUP_WIDGET -> R.string.action_popup_widget
         GestureAction.TOGGLE_STATUS_BAR -> R.string.action_toggle_status_bar
         GestureAction.TOGGLE_DOCK -> R.string.action_toggle_dock
         GestureAction.JUMP_TO_PAGE -> R.string.action_jump_to_page
@@ -289,9 +292,25 @@ object EnumLabels {
     }
 
     @StringRes
+    fun of(style: com.supernova.launcher.ui.GlassTone): Int = when (style) {
+        com.supernova.launcher.ui.GlassTone.AUTO -> R.string.glass_tone_auto
+        com.supernova.launcher.ui.GlassTone.CLEAR -> R.string.glass_tone_clear
+        com.supernova.launcher.ui.GlassTone.FROSTED -> R.string.glass_tone_frosted
+        com.supernova.launcher.ui.GlassTone.SMOKED -> R.string.glass_tone_smoked
+    }
+
+    @StringRes
+    fun of(backdrop: com.supernova.launcher.ui.GlassBackdrop): Int = when (backdrop) {
+        com.supernova.launcher.ui.GlassBackdrop.AUTO -> R.string.glass_backdrop_auto
+        com.supernova.launcher.ui.GlassBackdrop.COLOURS -> R.string.glass_backdrop_colours
+        com.supernova.launcher.ui.GlassBackdrop.NONE -> R.string.glass_backdrop_none
+    }
+
+    @StringRes
     fun of(style: DockBgStyle): Int = when (style) {
         DockBgStyle.NONE -> R.string.dock_bg_none
         DockBgStyle.ROUNDED -> R.string.dock_bg_rounded
+        DockBgStyle.LIQUID -> R.string.dock_bg_liquid
         DockBgStyle.SQUARE -> R.string.dock_bg_square
     }
 
@@ -378,6 +397,11 @@ object EnumLabels {
         ScrollEffect.WIPE -> R.string.effect_wipe
         ScrollEffect.ZOOM_FADE -> R.string.effect_zoom_fade
         ScrollEffect.THROW -> R.string.effect_throw
+        ScrollEffect.FADE -> R.string.effect_fade
+        ScrollEffect.PUSH -> R.string.effect_push
+        ScrollEffect.PARALLAX -> R.string.effect_parallax
+        ScrollEffect.SWING -> R.string.effect_swing
+        ScrollEffect.CUSTOM -> R.string.effect_custom
     }
 
     @StringRes
@@ -396,5 +420,6 @@ object EnumLabels {
         LabelFont.CONDENSED -> R.string.font_condensed
         LabelFont.SERIF -> R.string.font_serif
         LabelFont.MONOSPACE -> R.string.font_monospace
+        LabelFont.CUSTOM -> R.string.font_custom
     }
 }

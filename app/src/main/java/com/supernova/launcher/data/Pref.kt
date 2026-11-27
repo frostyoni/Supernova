@@ -11,6 +11,8 @@ import com.supernova.launcher.search.WebProvider
 import com.supernova.launcher.ui.AnimationSpeed
 import com.supernova.launcher.ui.BadgePosition
 import com.supernova.launcher.ui.DockBgStyle
+import com.supernova.launcher.ui.GlassBackdrop
+import com.supernova.launcher.ui.GlassTone
 import com.supernova.launcher.ui.DrawerSort
 import com.supernova.launcher.ui.DrawerStyle
 import com.supernova.launcher.ui.DrawerTabAlign
@@ -129,6 +131,9 @@ object Pref {
     private const val DESKTOP_PADDING_MAX = 48
     private const val WIDGET_PADDING_MAX = 24
     private const val WIDGET_RADIUS_MAX = 32
+    private const val WIDGET_BORDER_MAX = 16
+    private const val WIDGET_SHADOW_MAX = 32
+    private const val ICON_CACHE_KB_MAX = 64 * 1024
     private const val DOCK_BG_RADIUS_MAX = 24
     private const val LABEL_SIZE_MIN = 9
     private const val LABEL_SIZE_MAX = 18
@@ -160,6 +165,30 @@ object Pref {
     val gridRows = int("grid_rows", 2..GridLimits.DESKTOP_BIG)
     val gridCols = int("grid_cols", 2..GridLimits.DESKTOP_BIG)
     val dockCount = int("dock_count", DOCK_COUNT_MIN..GridLimits.DOCK_BIG)
+    // Fill the dock's empty slots with apps used recently.
+    val dockSuggestions = bool("dock_suggestions")
+    // Strip the heavy work: animations, wallpaper zoom, the glass shader.
+    val lowSpec = bool("low_spec")
+    val lowRam = bool("low_ram")
+    val widgetMemorySaver = bool("widget_memory_saver")
+    val iconCacheKb = int("icon_cache_kb", 0..ICON_CACHE_KB_MAX)
+    val vitalsCpu = bool("vitals_cpu")
+    val vitalsRefreshSec = int("vitals_refresh_sec", VitalsMath.REFRESH_MIN_SEC..VitalsMath.REFRESH_MAX_SEC)
+    // The drawer's fast scroller on the left, for a left thumb.
+    val leftHanded = bool("left_handed")
+    // Start the drawer list lower, in the thumb's half.
+    val drawerBottomShift = bool("drawer_bottom_shift")
+    // The glass surface's optics; used by the dock's Liquid background and its
+    // settings preview.
+    val glassTone = choice("glass_tone", GlassTone.entries)
+    val glassBackdrop = choice("glass_backdrop", GlassBackdrop.entries)
+    val glassThickness = int("glass_thickness", 4..30)
+    val glassBlur = int("glass_blur", 2..24)
+    val glassDensity = int("glass_density", 0..100)
+    val glassSpecular = int("glass_specular", 0..100)
+    val glassFresnel = int("glass_fresnel", 0..100)
+    val glassDispersion = int("glass_dispersion", 0..8)
+    val glassLight = int("glass_light", 0..360)
     val iconScale = float("icon_scale", ICON_SCALE_MIN..ICON_SCALE_MAX)
     val showLabels = bool("show_labels")
     val wallpaperScroll = bool("wallpaper_scroll")
@@ -221,6 +250,7 @@ object Pref {
     val drawerMatchDesktop = bool("drawer_match_desktop")
     val drawerBgOpacity = float("drawer_bg_opacity", DRAWER_OPACITY_MIN..1f)
     val drawerFastScroller = bool("drawer_fast_scroller")
+    val drawerAlphabetIndex = bool("drawer_alphabet_index")
     val drawerPullToSearch = bool("drawer_pull_to_search")
     val drawerSwipeIndicator = bool("drawer_swipe_indicator")
     val drawerSwipeHaptic = bool("drawer_swipe_haptic")
@@ -265,6 +295,15 @@ object Pref {
     val folderShowCount = bool("folder_show_count")
     val folderMode = choice("folder_mode", FolderMode.entries)
     val folderShadow = bool("folder_shadow")
+    val folderShadowSpread = int("folder_shadow_spread")
+    val folderShadowColor = text("folder_shadow_color")
+    val folderBorderWidth = int("folder_border_width")
+    val folderBorderColor = text("folder_border_color")
+    val subfolderDistinct = bool("subfolder_distinct")
+    val subfolderShadowSpread = int("subfolder_shadow_spread")
+    val subfolderShadowColor = text("subfolder_shadow_color")
+    val subfolderBorderWidth = int("subfolder_border_width")
+    val subfolderBorderColor = text("subfolder_border_color")
     val folderScroll = choice("folder_scroll", FolderScroll.entries)
     val folderIconShape = text("folder_icon_shape")
     val folderIconOutline = bool("folder_icon_outline")
@@ -281,12 +320,18 @@ object Pref {
     val paletteSeed = text("palette_seed")
     val styleConfig = text("style_config")
     val widgetCornerRadius = int("widget_corner_radius", 0..WIDGET_RADIUS_MAX)
+    val widgetBorderWidth = int("widget_border_width", 0..WIDGET_BORDER_MAX)
+    val widgetBorderColor = text("widget_border_color")
+    val widgetShadow = int("widget_shadow", 0..WIDGET_SHADOW_MAX)
+    val widgetShadowColor = text("widget_shadow_color")
     val showScrims = bool("show_scrims")
     val wallpaperZoom = bool("wallpaper_zoom")
     val autoAddApps = bool("auto_add_apps")
     val labelFont = choice("label_font", LabelFont.entries)
     val labelSingleLine = bool("label_single_line")
     val labelEvenRows = bool("label_even_rows")
+    val drawerEvenRows = bool("drawer_even_rows")
+    val folderEvenRows = bool("folder_even_rows")
     val dockInfiniteScroll = bool("dock_infinite_scroll")
     val dockMatchDesktop = bool("dock_match_desktop")
     val dockOverlay = bool("dock_overlay")
@@ -345,6 +390,9 @@ object Pref {
     val feedShowMedia = bool("feed_show_media")
     val feedShowCalendar = bool("feed_show_calendar")
     val feedShowContacts = bool("feed_show_contacts")
+    val feedShowUsage = bool("feed_show_usage")
+    val feedShowNotifications = bool("feed_show_notifications")
+    val seenPopupWidgetHint = bool("seen_popup_widget_hint")
     val feedShortcutRows = int("feed_shortcut_rows", 1..FEED_SHORTCUT_ROWS_MAX)
     val labsEnabled = bool("labs_enabled")
     val labsShowComponent = bool("labs_show_component")

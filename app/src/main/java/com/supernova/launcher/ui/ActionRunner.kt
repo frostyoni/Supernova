@@ -49,6 +49,8 @@ class ActionRunner(
         // The private space card, grown out of anchor (the action's home
         // icon) or, with none, from the middle of the home screen.
         fun openPrivateSpace(anchor: View?)
+        // Pull the home down into reach, or put it back.
+        fun toggleReachability()
     }
 
     fun runGesture(gesture: Gesture): Boolean {
@@ -98,6 +100,9 @@ class ActionRunner(
                 host.openSearch(null)
                 true
             }
+            // The icon swipe shows the bound widget in place, anchored at
+            // the icon; a plain action has no icon to anchor it at.
+            GestureAction.SHOW_POPUP_WIDGET -> false
             GestureAction.SEARCH_QUERY -> {
                 val query = bound.payload
                 if (query.isNullOrBlank()) false else { host.openSearch(query); true }
@@ -115,6 +120,13 @@ class ActionRunner(
             }
             GestureAction.LAUNCH_SHORTCUT -> {
                 launchShortcut(bound.payload)
+                true
+            }
+            // Only a folder's own icon knows which folder it means; the swipe
+            // path (LauncherActivity.launchSwipeAction) launches the item.
+            GestureAction.LAUNCH_FOLDER_ITEM -> false
+            GestureAction.REACHABILITY -> {
+                host.toggleReachability()
                 true
             }
             GestureAction.LAUNCH_INTENT -> {

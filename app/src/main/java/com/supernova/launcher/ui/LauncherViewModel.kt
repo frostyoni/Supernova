@@ -41,6 +41,8 @@ import com.supernova.launcher.data.Pref
 import com.supernova.launcher.data.PrefSpec
 import com.supernova.launcher.data.PrivateSpace
 import com.supernova.launcher.data.TabFolders
+import com.supernova.launcher.data.WidgetStacks
+import com.supernova.launcher.data.WidgetStyle
 import com.supernova.launcher.data.WorkspaceGeometry
 import com.supernova.launcher.data.imports.BackupFiles
 import com.supernova.launcher.data.imports.LayoutConverter
@@ -176,6 +178,7 @@ class LauncherViewModel(
     private var appliedThemedSig: String? = null
     private var appliedNight: Boolean? = null
     private var autoBackupWritten = false
+    private var shortcutsRepinned = false
 
     // Whether each of the two icon-configuration collectors has applied its
     // first emission. The startup scan waits for both: a warm that runs
@@ -311,6 +314,14 @@ class LauncherViewModel(
                 recentLaunches = it
                 launches.value += 1
             }
+        }
+        viewModelScope.launch {
+            preferences.flow
+                .map { it.iconCacheKb to it.lowRam }
+                .distinctUntilChanged()
+                .collect { (kb, lowRam) ->
+                    withContext(Dispatchers.Default) { catalog.setIconCacheKb(kb, lowRam) }
+                }
         }
         // Smart folders are on by default, so the category folders are made
         // automatically; the toggle and the install hook regenerate them, so
@@ -699,10 +710,6 @@ class LauncherViewModel(
         return state.value.model.items.filter { it.container == ContainerType.FOLDER && it.folderId == folderId }.sortedBy { it.rank }
     }
 
-    // The app a swipe-to-open folder's tap launches: the first one its window
-    // shows.
-    fun folderFirstMember(folderId: String): LauncherItem? = folderMembers(folderId).firstOrNull()
-
     fun setFolderSwipeToOpen(folderId: String, on: Boolean) = persist { repository.setFolderSwipeToOpen(folderId, on) }
 
     // What overlaps a placed item from below and above on its page.
@@ -730,6 +737,9 @@ class LauncherViewModel(
 
     // Null goes back to following the setting.
     fun setWidgetPadding(itemId: String, paddingDp: Int?) = persist { repository.setWidgetPadding(itemId, paddingDp) }
+
+    fun setWidgetStyle(itemId: String, style: WidgetStyle) =
+        persist { repository.setWidgetStyle(itemId, style) }
 
     fun addAppToWorkspace(
         app: LaunchableApp,
@@ -910,9 +920,27 @@ class LauncherViewModel(
         }
     }
 
+    @Suppress("LongParameterList")
+    fun addNativeWidget(
+        page: Int,
+        cellX: Int,
+        cellY: Int,
+        kind: String,
+        label: String,
+        spanX: Int,
+        spanY: Int
+    ) {
+        val prefs = state.value.prefs
+        viewModelScope.launch {
+            repository.addNativeWidget(
+                page, cellX, cellY, prefs.gridCols, prefs.gridRows, kind, label, spanX, spanY
+            )
+        }
+    }
+
     // Every host id the model still references: workspace/dock items plus
-    // feed-card featured widgets. sweepOrphanWidgetIds reclaims the rest, so
-    // omitting a source here would delete its live widgets.
+    // every widget stack member, feed-card featured widgets. sweepOrphanWidgetIds
+    // reclaims the rest, so omitting a source here would delete its live widgets.
     // Every host id something still points at: widgets on the pages, widget
     // cards, and the search bar's Replace widget, which lives in a pref. The
     // orphan sweep deletes whatever this leaves out, so it must be complete,
@@ -921,12 +949,55 @@ class LauncherViewModel(
         if (!repository.modelReadable()) return null
         val model = repository.modelFlow.first()
         val searchBarWidget = preferences.snapshot().searchBarWidgetId
-        return (model.items.mapNotNull { it.appWidgetId } +
-            model.feedCards.mapNotNull { it.appWidgetId } +
+        return (model.items.flatMap { item ->
+            listOfNotNull(item.appWidgetId, item.popupWidget?.appWidgetId) +
+                item.widgetStack.mapNotNull { it.appWidgetId }
+        } + model.feedCards.mapNotNull { it.appWidgetId } +
             listOfNotNull(searchBarWidget.takeIf { it != 0 })).toSet()
     }
 
     fun setWidgetId(itemId: String, appWidgetId: Int) = persist { repository.setWidgetId(itemId, appWidgetId) }
+
+    fun setPopupWidget(itemId: String, appWidgetId: Int, provider: String, userSerial: Long = 0L) =
+        persist { repository.setPopupWidget(itemId, appWidgetId, provider, userSerial) }
+
+    fun clearPopupWidget(itemId: String) = persist { repository.setPopupWidget(itemId, null) }
+
+    fun setPopupWidgetId(itemId: String, appWidgetId: Int) =
+        persist { repository.setPopupWidgetId(itemId, appWidgetId) }
+
+    fun setPopupWidgetSize(itemId: String, widthDp: Int?, heightDp: Int?) =
+        persist { repository.setPopupWidgetSize(itemId, widthDp, heightDp) }
+
+    fun addWidgetToStack(
+        itemId: String,
+        appWidgetId: Int,
+        provider: String,
+        userSerial: Long = 0L
+    ) = persist { repository.addWidgetToStack(itemId, appWidgetId, provider, userSerial) }
+
+    fun setWidgetStackFront(itemId: String, frontIndex: Int) =
+        persist { repository.setWidgetStackFront(itemId, frontIndex) }
+
+    fun setWidgetStackMemberId(itemId: String, memberIndex: Int, appWidgetId: Int) =
+        persist { repository.setWidgetStackMemberId(itemId, memberIndex, appWidgetId) }
+
+    fun removeWidgetFromStack(itemId: String, memberFrontIndex: Int) =
+        persist { repository.removeWidgetFromStack(itemId, memberFrontIndex) }
+
+    // The Manage stack sheet's reorder: the whole order in one write, with the
+    // front left on the widget it was on rather than on the position.
+    fun moveStackMember(itemId: String, from: Int, to: Int) = persist {
+        val current = repository.modelFlow.first().items.firstOrNull { it.id == itemId }
+        val front = WidgetStacks.frontAfterMove(from, to, current?.widgetStackFront ?: 0)
+        repository.moveStackMember(itemId, from, to, front)
+    }
+
+    // A stack member taken out by its place in the order, handing the caller
+    // the widget id it frees to release.
+    fun removeStackMemberAt(itemId: String, index: Int, onRemoved: (Int?) -> Unit) = persist {
+        onRemoved(repository.removeStackMemberAt(itemId, index))
+    }
 
     fun resizeWidget(
         itemId: String,
@@ -1248,6 +1319,16 @@ class LauncherViewModel(
     // top row). Until there is any recency to go on, the most-launched stand
     // in.
     fun recentApps(limit: Int): List<LaunchableApp> = DrawerOrder.recentRow(visibleApps(), usage(), limit)
+
+    // Apps for the dock's empty slots: the recently used ones that are not
+    // already in the dock (any page), one each, private space never.
+    fun dockSuggestions(limit: Int): List<LaunchableApp> {
+        if (limit <= 0) return emptyList()
+        val placed = dockItems().mapNotNullTo(HashSet()) { item ->
+            item.packageName?.let { pkg -> "${item.userSerial}/$pkg/${item.className.orEmpty()}" }
+        }
+        return DockSuggestions.fill(recentApps(limit + placed.size + 4), placed, limit)
+    }
 
     fun noteLaunch(app: LaunchableApp) = persist { preferences.recordLaunch(hiddenKey(app)) }
 
@@ -1572,6 +1653,8 @@ class LauncherViewModel(
 
     fun addPage() = persist { repository.addPage() }
 
+    fun addPageFirst() = persist { repository.addPageFirst() }
+
     fun removePage(page: Int, onRemoved: (() -> Unit)? = null) {
         viewModelScope.launch { if (repository.removePage(page)) onRemoved?.invoke() }
     }
@@ -1668,6 +1751,18 @@ class LauncherViewModel(
         viewModelScope.launch {
             val prefs = state.value.prefs
             withContext(Dispatchers.Default) { repository.writeAutoBackup(prefs) }
+        }
+    }
+
+    // Once per session, with the real layout loaded: the home screen's app
+    // shortcuts pinned again where a pin went missing - a layout restored
+    // before this launcher held the home role couldn't pin them then.
+    fun repinShortcutsOnce() {
+        if (shortcutsRepinned) return
+        shortcutsRepinned = true
+        val items = state.value.model.items
+        viewModelScope.launch(Dispatchers.IO) {
+            com.supernova.launcher.data.ShortcutPins.repin(getApplication(), items)
         }
     }
 

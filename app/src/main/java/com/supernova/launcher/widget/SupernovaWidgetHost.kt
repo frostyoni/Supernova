@@ -5,11 +5,16 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Context
 import android.graphics.Outline
+import android.text.TextUtils
 import android.view.MotionEvent
 import android.view.View
+import android.widget.RemoteViews
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.widget.TextView
+import java.util.Collections
+import java.util.WeakHashMap
 import kotlin.math.abs
 
 // Host returning our own host-view subclass so every created widget gets the
@@ -55,23 +60,41 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
         //    window has one focus: a page change, the drawer search or a
         //    re-attach took it away and the text stopped at "..." (#325).
         //    Selected also runs a marquee, and every widget's can at once,
-        //    so each marquee TextView is selected whenever content lands
-        //    (applies may finish later, on the inflation executor), and
-        //    selected again after a re-attach, which stops a running one.
+        //    so each marquee TextView that took focus (see requestChildFocus)
+        //    is selected whenever content lands (applies may finish later,
+        //    on the inflation executor), and selected again after a
+        //    re-attach, which stops a running one. Marquee text that never
+        //    asked for focus stays at "...", as in any other host (#370).
         setOnHierarchyChangeListener(object : OnHierarchyChangeListener {
             override fun onChildViewAdded(parent: View?, child: View?) {
-                post { WidgetMarquees.select(this@SupernovaWidgetHostView, restart = false) }
+                post {
+                    WidgetMarquees.select(this@SupernovaWidgetHostView, marqueeHolders, restart = false)
+                }
             }
 
             override fun onChildViewRemoved(parent: View?, child: View?) = Unit
         })
         addOnAttachStateChangeListener(object : OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v: View) {
-                post { WidgetMarquees.select(v, restart = true) }
+                post { WidgetMarquees.select(v, marqueeHolders, restart = true) }
             }
 
             override fun onViewDetachedFromWindow(v: View) = Unit
         })
+    }
+
+    // Marquee TextViews that took focus in this widget: the ones a widget
+    // marks with <requestFocus/>, which hold focus (and scroll) in a stock
+    // host. A request made during inflation reaches here when the focused
+    // view is added, before onChildViewAdded; list rows bubble up the same
+    // way. Weak, so replaced content drops out.
+    private val marqueeHolders: MutableSet<TextView> = Collections.newSetFromMap(WeakHashMap())
+
+    override fun requestChildFocus(child: View?, focused: View?) {
+        if (focused is TextView && focused.ellipsize == TextUtils.TruncateAt.MARQUEE) {
+            marqueeHolders.add(focused)
+        }
+        super.requestChildFocus(child, focused)
     }
 
     var cornerRadiusPx: Float = 0f
@@ -79,6 +102,27 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
             field = value
             applyCornerClip()
         }
+
+    private var pendingViews: RemoteViews? = null
+
+    var updatesPaused: Boolean = false
+        set(paused) {
+            if (field == paused) return
+            field = paused
+            if (!paused) {
+                val views = pendingViews
+                pendingViews = null
+                if (views != null) updateAppWidget(views)
+            }
+        }
+
+    override fun updateAppWidget(views: RemoteViews?) {
+        if (updatesPaused) {
+            pendingViews = views
+            return
+        }
+        super.updateAppWidget(views)
+    }
 
     private val outline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
@@ -91,7 +135,7 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
     // public setters - long after any synchronous re-assertion. While the
     // launcher owns a radius, competing writes are ignored.
     override fun setOutlineProvider(provider: ViewOutlineProvider?) {
-        if (cornerRadiusPx > 0f && provider !== outline) return
+        if (provider !== outline) return
         super.setOutlineProvider(provider)
     }
 
@@ -108,14 +152,9 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
     }
 
     private fun applyCornerClip() {
-        if (cornerRadiusPx > 0f) {
-            super.setOutlineProvider(outline)
-            super.setClipToOutline(true)
-            invalidateOutline()
-        } else {
-            super.setOutlineProvider(ViewOutlineProvider.BACKGROUND)
-            super.setClipToOutline(false)
-        }
+        super.setOutlineProvider(outline)
+        super.setClipToOutline(cornerRadiusPx > 0f)
+        invalidateOutline()
     }
 
     private var longPressFired = false
@@ -132,7 +171,7 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 longPressFired = false
-                contentOwnsTouch = hasScrollableContent()
+                contentOwnsTouch = scrollsVertically(this)
                 downX = ev.x
                 downY = ev.y
                 postDelayed(longPressCheck, ViewConfiguration.getLongPressTimeout().toLong())
@@ -181,20 +220,6 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
         super.requestDisallowInterceptTouchEvent(disallowIntercept)
     }
 
-    // Scrollable content announces itself up front, before the finger has
-    // moved far enough for anything to claim the stream.
-    fun hasScrollableContent(): Boolean = scrollsVertically(this)
-
-    private fun scrollsVertically(view: View): Boolean {
-        if (view.canScrollVertically(1) || view.canScrollVertically(-1)) return true
-        if (view !is ViewGroup) return false
-        for (i in 0 until view.childCount) {
-            val child = view.getChildAt(i)
-            if (child.visibility == VISIBLE && scrollsVertically(child)) return true
-        }
-        return false
-    }
-
     // The workspace pager calls this on children when it takes over the
     // gesture for a page swipe.
     override fun cancelLongPress() {
@@ -204,17 +229,27 @@ class SupernovaWidgetHostView(context: Context) : AppWidgetHostView(context) {
     }
 }
 
-// Starts every marquee in a widget's views by selecting its TextView.
+private fun scrollsVertically(view: View): Boolean =
+    view.canScrollVertically(1) || view.canScrollVertically(-1) ||
+        view is ViewGroup && (0 until view.childCount).any { i ->
+            val child = view.getChildAt(i)
+            child.visibility == View.VISIBLE && scrollsVertically(child)
+        }
+
+fun SupernovaWidgetHostView.hasScrollableContent(): Boolean = scrollsVertically(this)
+
+// Keeps the marquees of a widget's focus-taking TextViews running by
+// selecting them.
 private object WidgetMarquees {
-    fun select(view: View, restart: Boolean) {
-        if (view is android.widget.TextView) {
-            if (view.ellipsize == android.text.TextUtils.TruncateAt.MARQUEE) {
+    fun select(view: View, holders: Set<TextView>, restart: Boolean) {
+        if (view is TextView) {
+            if (view in holders && view.ellipsize == TextUtils.TruncateAt.MARQUEE) {
                 if (restart && view.isSelected) view.isSelected = false
                 view.isSelected = true
             }
             return
         }
         if (view !is ViewGroup) return
-        for (i in 0 until view.childCount) select(view.getChildAt(i), restart)
+        for (i in 0 until view.childCount) select(view.getChildAt(i), holders, restart)
     }
 }

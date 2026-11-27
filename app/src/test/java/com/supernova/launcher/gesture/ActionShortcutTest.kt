@@ -23,6 +23,22 @@ class ActionShortcutTest {
         assertEquals("2", decoded?.payload)
     }
 
+    // The first item is position 0, and a payload of "0" is a payload.
+    @Test
+    fun folderItemCarriesItsPosition() {
+        val decoded = ActionShortcut.decode(ActionShortcut.encode(GestureAction.LAUNCH_FOLDER_ITEM, "0"))
+        assertEquals(GestureAction.LAUNCH_FOLDER_ITEM, decoded?.action)
+        assertEquals("0", decoded?.payload)
+    }
+
+    // The folder is the icon the swipe is on, so neither the gesture pickers
+    // nor the standalone action list can offer it where there is no folder.
+    @Test
+    fun folderItemIsOnlyOfferedOnAFolderIcon() {
+        assert(GestureAction.LAUNCH_FOLDER_ITEM !in GestureDefaults.pickerActions)
+        assert(GestureAction.LAUNCH_FOLDER_ITEM !in ActionShortcut.choices)
+    }
+
     @Test
     fun decodeReturnsNullForForeignUris() {
         assertNull(ActionShortcut.decode(null))

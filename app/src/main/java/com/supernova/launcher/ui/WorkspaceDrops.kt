@@ -11,6 +11,7 @@ import android.view.animation.PathInterpolator
 import android.widget.Toast
 import com.supernova.launcher.R
 import com.supernova.launcher.data.ContainerType
+import com.supernova.launcher.data.FolderNesting
 import com.supernova.launcher.data.ItemType
 import com.supernova.launcher.data.LaunchableApp
 import com.supernova.launcher.data.LauncherItem
@@ -308,7 +309,15 @@ class WorkspaceDrops(
             // A folder goes into no folder, and makes none with an icon.
             is DragPayload.DrawerFolder -> return false
             is DragPayload.ExistingItem -> {
-                val item = viewModel.state.value.model.items.firstOrNull { it.id == payload.itemId } ?: return false
+                val model = viewModel.state.value.model
+                val item = model.items.firstOrNull { it.id == payload.itemId } ?: return false
+                if (item.itemType == ItemType.FOLDER) {
+                    // A folder nests in a folder, never in an app, and never
+                    // into itself or one it already contains.
+                    val targetId = folderTargetId(page, rawCellX, rawCellY, item.id) ?: return false
+                    val target = model.items.firstOrNull { it.id == targetId } ?: return false
+                    return target.itemType == ItemType.FOLDER && FolderNesting.canNest(model, item, target)
+                }
                 if (item.itemType != ItemType.APP && item.itemType != ItemType.SHORTCUT) return false
                 // A large icon makes room where it lands rather than a folder.
                 if (item.isLargeIcon) return false

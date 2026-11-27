@@ -608,10 +608,20 @@ class SettingsPreviewView @JvmOverloads constructor(
                 LayoutParams(LayoutParams.MATCH_PARENT, dp(HOME_SCRIM_DP), Gravity.BOTTOM))
         }
         homeRow = row
-        addView(row, LayoutParams(LayoutParams.MATCH_PARENT, dp(HOME_HEIGHT_DP)))
+        // The row sits in the middle of the strip, above the page indicator
+        // when there is one (#365); its icons keep a common top, as on the
+        // home screen, whatever their labels' lines.
+        val indicated = prefs.pageIndicatorStyle != com.supernova.launcher.ui.IndicatorStyle.NONE
+        val middle = FrameLayout(context).apply {
+            clipChildren = false
+            clipToPadding = false
+            setPadding(0, 0, 0, if (indicated) dp(HOME_INDICATOR_DP) else 0)
+            addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL))
+        }
+        addView(middle, LayoutParams(LayoutParams.MATCH_PARENT, dp(HOME_HEIGHT_DP)))
         // The page indicator under the icons, always shown here (auto-hide
         // would leave nothing to look at), on the first of a few pages.
-        if (prefs.pageIndicatorStyle != com.supernova.launcher.ui.IndicatorStyle.NONE) {
+        if (indicated) {
             val indicator = com.supernova.launcher.ui.PageIndicatorView(context)
             indicator.configure(
                 prefs.pageIndicatorStyle, HOME_PREVIEW_PAGES, false,
@@ -788,6 +798,22 @@ class SettingsPreviewView @JvmOverloads constructor(
         prefs: LauncherPrefs,
         resolved: com.supernova.launcher.ui.theme.ResolvedSurface
     ): Drawable? {
+        if (prefs.dockBgStyle == DockBgStyle.LIQUID) {
+            val night = (context.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            val glass = com.supernova.launcher.data.GlassPrefs.resolve(
+                prefs, night, dp(prefs.dockBgRadius).toFloat(), context.resources.displayMetrics.density
+            )
+            return com.supernova.launcher.ui.LiquidGlassDrawable(
+                context,
+                glass.look,
+                glass.backdrop,
+                prefs.lowSpec
+            ).also {
+                it.alpha = maxOf(android.graphics.Color.alpha(resolved.surface), (0.55f * 255).toInt())
+            }
+        }
         val radius = when (prefs.dockBgStyle) {
             DockBgStyle.NONE -> return null
             DockBgStyle.ROUNDED -> dp(prefs.dockBgRadius).toFloat()

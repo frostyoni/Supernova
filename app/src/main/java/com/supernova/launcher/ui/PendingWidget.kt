@@ -34,6 +34,16 @@ internal data class PendingWidget(
                 putString(REF, target.itemId)
             }
             WidgetController.Target.SearchBar -> putString(KIND, KIND_SEARCH_BAR)
+            is WidgetController.Target.Stack -> {
+                putString(KIND, KIND_STACK)
+                putString(REF, target.itemId)
+            }
+            is WidgetController.Target.Popup -> {
+                putString(KIND, KIND_POPUP)
+                putString(REF, target.itemId)
+                putBoolean(DOWN_SET, target.down != null)
+                putBoolean(DOWN, target.down == true)
+            }
         }
     }
 
@@ -47,10 +57,14 @@ internal data class PendingWidget(
         private const val MOVE_X = "move_x"
         private const val MOVE_Y = "move_y"
         private const val MOVE_SNAP = "move_snap"
+        private const val DOWN_SET = "down_set"
+        private const val DOWN = "down"
         private const val KIND_WORKSPACE = "workspace"
         private const val KIND_CARD = "card"
         private const val KIND_RESTORED = "restored"
         private const val KIND_SEARCH_BAR = "search_bar"
+        private const val KIND_STACK = "stack"
+        private const val KIND_POPUP = "popup"
 
         // Null for an empty or unreadable bundle: nothing was pending.
         fun fromBundle(state: Bundle): PendingWidget? {
@@ -69,6 +83,12 @@ internal data class PendingWidget(
             KIND_CARD -> state.getString(REF)?.let(WidgetController.Target::Card)
             KIND_RESTORED -> state.getString(REF)?.let(WidgetController.Target::Restored)
             KIND_SEARCH_BAR -> WidgetController.Target.SearchBar
+            KIND_STACK -> state.getString(REF)?.let(WidgetController.Target::Stack)
+            KIND_POPUP -> state.getString(REF)?.let { id ->
+                WidgetController.Target.Popup(
+                    id, if (state.getBoolean(DOWN_SET)) state.getBoolean(DOWN) else null
+                )
+            }
             else -> null
         }
 

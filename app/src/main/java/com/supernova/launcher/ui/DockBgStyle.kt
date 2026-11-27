@@ -3,12 +3,14 @@ package com.supernova.launcher.ui
 import com.supernova.launcher.data.SettingEnumSerializer
 
 @kotlinx.serialization.Serializable(with = DockBgStyle.Names::class)
-// Settings offer it as a switch: off is NONE, on is ROUNDED at the
-// Background radius (dockBgRadius). SQUARE is what a dock set before the
-// switch keeps until its radius is changed, and draws at radius 0.
+// Liquid glass is the wallpaper's colours under the same pane and rim the
+// icons get, because the system wallpaper itself cannot be read on Android 13
+// and up. SQUARE is what a dock set before the switch keeps until its radius
+// is changed, and draws at radius 0.
 enum class DockBgStyle {
     NONE,
     ROUNDED,
+    LIQUID,
     SQUARE;
 
     // Its name in the store and in a backup, read back leniently.

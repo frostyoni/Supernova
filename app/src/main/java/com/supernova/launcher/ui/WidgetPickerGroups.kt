@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Process
 import android.os.UserManager
 import com.supernova.launcher.R
+import com.supernova.launcher.data.NativeWidgets
 import com.supernova.launcher.gesture.ActionShortcut
 import com.supernova.launcher.gesture.GestureAction
 import com.supernova.launcher.ui.settings.EnumLabels
@@ -47,6 +48,13 @@ sealed interface ShortcutTarget {
 
     // Opens the any-activity picker.
     object Activities : ShortcutTarget
+
+    // A widget drawn by the launcher itself, placed on the workspace.
+    data class NativeWidget(
+        val kind: String,
+        val spanX: Int = NativeWidgets.defaultSpanX(kind),
+        val spanY: Int = NativeWidgets.defaultSpanY(kind)
+    ) : ShortcutTarget
 }
 
 sealed interface WidgetPickerEntry {
@@ -272,8 +280,14 @@ object WidgetPickerGroups {
             label = context.getString(R.string.app_name),
             icon = context.getDrawable(R.mipmap.ic_launcher)?.let(renderTile),
             widgetCount = 0,
-            shortcutCount = offered.size + 1,
+            shortcutCount = offered.size + 2,
         ) {
+            val native = WidgetPickerEntry.Shortcut(
+                packageName = context.packageName,
+                label = context.getString(R.string.native_widget_device_status),
+                icon = context.getDrawable(R.drawable.ic_widget_vitals)?.let(renderTile),
+                target = ShortcutTarget.NativeWidget(NativeWidgets.DEVICE_STATUS)
+            )
             val actions = offered.map { action ->
                 WidgetPickerEntry.Shortcut(
                     packageName = context.packageName,
@@ -288,7 +302,7 @@ object WidgetPickerGroups {
                 icon = context.getDrawable(R.drawable.ic_action_drawer)?.let(renderTile),
                 target = ShortcutTarget.Activities
             )
-            WidgetPickerContents(emptyList(), actions + activities)
+            WidgetPickerContents(emptyList(), listOf(native) + actions + activities)
         }
     }
 }

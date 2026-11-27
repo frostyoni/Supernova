@@ -9,12 +9,15 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import com.supernova.launcher.data.LauncherPrefs
+import com.supernova.launcher.data.LaunchableApp
 import com.supernova.launcher.databinding.ActivityLauncherBinding
 import com.supernova.launcher.databinding.ViewFeedPaneBinding
 import com.supernova.launcher.feed.CalendarCardSource
 import com.supernova.launcher.feed.ContactsCardSource
 import com.supernova.launcher.feed.FeedOrder
 import com.supernova.launcher.feed.MediaCardSource
+import com.supernova.launcher.feed.NotificationsCardSource
+import com.supernova.launcher.feed.UsageCardSource
 import com.supernova.launcher.ui.theme.Styles
 import com.supernova.launcher.ui.theme.SurfaceId
 import kotlinx.coroutines.CoroutineScope
@@ -66,6 +69,10 @@ class FeedController(
         // The media card reads sessions through notification access.
         fun requestMediaAccess()
 
+        // A usage card row: the launcher's own launch path, so the tap counts
+        // as a launch like any other.
+        fun launchApp(app: LaunchableApp)
+
         fun openCalendarEvent(eventId: Long)
 
         fun openContact(contact: ContactsCardSource.Starred, anchor: View)
@@ -95,6 +102,8 @@ class FeedController(
             onGrantContacts = { host.requestContactsPermission() },
             onOpenEvent = { id -> host.openCalendarEvent(id) },
             onOpenContact = { contact, view -> host.openContact(contact, view) },
+            onOpenApp = { app -> host.launchApp(app) },
+            appIcon = { app -> viewModel.appCatalog().iconFor(app) },
             onAddCard = { host.addCard() },
             onFeedSettings = { host.openFeedSettings() },
             onAddWidget = { host.addWidgetCard() },
@@ -109,6 +118,20 @@ class FeedController(
     private val mediaSource = MediaCardSource(context.applicationContext)
     private val calendarSource = CalendarCardSource(context.applicationContext, scope)
     private val contactsSource = ContactsCardSource(context.applicationContext, scope)
+    // The launch counts are a small map already in memory: the source only
+    // ranks them against the apps that are visible now.
+    private val usageSource = UsageCardSource(
+        counts = { viewModel.launchCounts() },
+        apps = { viewModel.visibleApps() }
+    )
+    // Read-only, and only from the access already granted for badges.
+    private val notificationsSource = NotificationsCardSource(
+        apps = { viewModel.visibleApps() },
+        enabled = { com.supernova.launcher.notification.SupernovaNotificationListener.isEnabled(context) },
+        userHash = { app ->
+            viewModel.appCatalog().userForSerial(app.userSerial)?.hashCode() ?: 0
+        }
+    )
     private var collectJob: Job? = null
 
     // Swipe state. The drag path mutates translationX only - no allocations
@@ -429,11 +452,27 @@ class FeedController(
         mediaSource.onShown()
         calendarSource.onShown()
         contactsSource.onShown()
+        usageSource.onShown()
+        notificationsSource.onShown()
         collectJob = scope.launch {
             launch {
                 combine(
-                    mediaSource.state, calendarSource.state, contactsSource.state
-                ) { _, _, _ -> Unit }.collect { rebuild() }
+                    mediaSource.state, calendarSource.state, contactsSource.state,
+                    usageSource.state, notificationsSource.state
+                ) { _, _, _, _, _ -> Unit }.collect { rebuild() }
+            }
+            launch {
+                // Launch counts move as apps open, a tap in this very card
+                // included; the card is rebuilt when they do. Nothing runs
+                // while the pane is hidden - this collector is cancelled with
+                // the rest.
+                viewModel.launchGeneration.collect { usageSource.refresh() }
+            }
+            launch {
+                // The listener refreshes on posts and removals; the glance
+                // follows while the pane is open, and stops with the rest.
+                com.supernova.launcher.notification.SupernovaNotificationListener.badgeState
+                    .collect { notificationsSource.refresh() }
             }
             launch {
                 // Card edits made while the pane is open (editor sheet on top),
@@ -458,6 +497,8 @@ class FeedController(
         mediaSource.onHidden()
         calendarSource.onHidden()
         contactsSource.onHidden()
+        usageSource.onHidden()
+        notificationsSource.onHidden()
     }
 
     // In-card permission grants land while the pane is open; re-pull both
@@ -507,6 +548,15 @@ class FeedController(
                 null -> Unit
             }
         }
+        // Shown even with nothing counted: the card says so itself.
+        if (prefs.feedShowUsage) {
+            usageSource.state.value?.let { builtIns[FeedOrder.USAGE] = FeedAdapter.Row.Usage(it) }
+        }
+        if (prefs.feedShowNotifications) {
+            notificationsSource.state.value?.let {
+                builtIns[FeedOrder.NOTIFICATIONS] = FeedAdapter.Row.Notifications(it)
+            }
+        }
         val rows = ArrayList<FeedAdapter.Row>()
         FeedOrder.layout(viewModel.feedOrder(), viewModel.feedCards(), builtIns.keys).forEach { entry ->
             val card = entry.card
@@ -522,7 +572,9 @@ class FeedController(
     private fun readyMadeOff(prefs: LauncherPrefs): List<String> = listOfNotNull(
         FeedOrder.MEDIA.takeUnless { prefs.feedShowMedia },
         FeedOrder.CALENDAR.takeUnless { prefs.feedShowCalendar },
-        FeedOrder.CONTACTS.takeUnless { prefs.feedShowContacts }
+        FeedOrder.CONTACTS.takeUnless { prefs.feedShowContacts },
+        FeedOrder.USAGE.takeUnless { prefs.feedShowUsage },
+        FeedOrder.NOTIFICATIONS.takeUnless { prefs.feedShowNotifications }
     )
 
     // A ready-made card turned on from the empty page; calendar and contacts
@@ -541,6 +593,9 @@ class FeedController(
                 viewModel.set(com.supernova.launcher.data.Pref.feedShowContacts, true)
                 host.requestContactsPermission()
             }
+            FeedOrder.USAGE -> viewModel.set(com.supernova.launcher.data.Pref.feedShowUsage, true)
+            FeedOrder.NOTIFICATIONS ->
+                viewModel.set(com.supernova.launcher.data.Pref.feedShowNotifications, true)
         }
     }
 
@@ -579,8 +634,8 @@ class FeedController(
         pane.feedRecycler.adapter = adapter
         pane.feedRecycler.itemAnimator = null
         FeedFillPages(adapter, cardBinder) { cardDrag.holding }.attach(pane.feedRecycler)
-        pane.feedRecycler.layoutManager =
-            androidx.recyclerview.widget.LinearLayoutManager(context)
+        val list = pane.feedRecycler
+        list.layoutManager = FeedLayoutManager(context) { list.widgetHolds && !cardDrag.holding }
         cardDrag.attach(pane.feedRecycler)
         pane.feedSearchBar.onTap = { host.onOpenSearch() }
         pane.feedSearchBar.prefs = { viewModel.state.value.prefs }
@@ -617,7 +672,9 @@ class FeedController(
             appliedHeader = prefs.feedShowSearch
             configureHeader()
         }
-        val rows = listOf(prefs.feedShowMedia, prefs.feedShowCalendar, prefs.feedShowContacts)
+        val rows = listOf(
+            prefs.feedShowMedia, prefs.feedShowCalendar, prefs.feedShowContacts, prefs.feedShowUsage
+        )
         if (rows != appliedRows) {
             appliedRows = rows
             rebuild()

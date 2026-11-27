@@ -2,6 +2,8 @@ package com.supernova.launcher.ui
 
 import android.view.View
 import androidx.viewpager2.widget.ViewPager2
+import com.supernova.launcher.data.CustomTransition
+import com.supernova.launcher.data.TransitionMath
 import com.supernova.launcher.data.SettingEnumSerializer
 import kotlin.math.abs
 import kotlin.math.max
@@ -24,7 +26,13 @@ enum class ScrollEffect {
     GLASS,
     WIPE,
     ZOOM_FADE,
-    THROW;
+    THROW,
+    FADE,
+    PUSH,
+    PARALLAX,
+    SWING,
+    // A spec from Labs, not one of the fixed effects.
+    CUSTOM;
 
     // Its name in the store and in a backup, read back leniently.
     object Names : SettingEnumSerializer<ScrollEffect>("ScrollEffect", entries, NONE)
@@ -36,7 +44,10 @@ enum class ScrollEffect {
 
 object PageTransformers {
 
-    fun forEffect(effect: ScrollEffect): ViewPager2.PageTransformer? {
+    fun forEffect(
+        effect: ScrollEffect,
+        custom: CustomTransition? = null
+    ): ViewPager2.PageTransformer? {
         val transform: (View, Float) -> Unit = when (effect) {
             ScrollEffect.NONE -> return null
             ScrollEffect.SIMPLE -> ::simple
@@ -54,7 +65,17 @@ object PageTransformers {
             ScrollEffect.WIPE -> ::wipe
             ScrollEffect.ZOOM_FADE -> ::zoomFade
             ScrollEffect.THROW -> ::throwAway
+            ScrollEffect.FADE -> ::fade
+            ScrollEffect.PUSH -> ::push
+            ScrollEffect.PARALLAX -> ::parallax
+            ScrollEffect.SWING -> ::swing
+            // Handled in the wrapper below, which knows each page's role.
+            ScrollEffect.CUSTOM -> { _, _ -> }
         }
+        // Each page's last distance and role, for the custom effect: a page's
+        // own distance trend says whether it is arriving or leaving, and the
+        // role keeps still through a pause (see PageRoles).
+        val roles = java.util.WeakHashMap<View, PageRoles.State>()
         return ViewPager2.PageTransformer { page, position ->
             // A page a whole page or more away is out of view in a plain
             // slide, and no effect may bring it back. Home pages are see-
@@ -71,13 +92,51 @@ object PageTransformers {
             // edit mode, or the menu of an icon on the hidden page, whose
             // Remove took that unseen icon while the one in view stayed.
             if (abs(position) >= 1f) {
+                if (effect == ScrollEffect.CUSTOM) {
+                    val distance = abs(position).coerceIn(0f, 1f)
+                    roles.getOrPut(page) { PageRoles.State(null, distance) }.park(distance)
+                }
                 resetTransforms(page)
                 page.alpha = 0f
+            } else if (effect == ScrollEffect.CUSTOM) {
+                val distance = abs(position).coerceIn(0f, 1f)
+                val state = roles.getOrPut(page) { PageRoles.State(null, distance) }
+                applyCustom(page, position, custom, state.moveTo(distance))
             } else {
                 page.alpha = 1f
                 transform(page, position)
             }
         }
+    }
+
+    // A Labs spec's frame. The lane is chosen by ROLE, not by which side the
+    // page is on: the arriving page reads the incoming lane and the departing
+    // one the outgoing lane, whichever way the finger goes. The role comes
+    // from the page's own distance trend (PageRoles), because a backward drag
+    // looks like a forward one to the pager. TransitionMath owns the mirror
+    // and the fade.
+    private fun applyCustom(page: View, position: Float, spec: CustomTransition?, arriving: Boolean) {
+        if (spec == null) {
+            simple(page, position)
+            return
+        }
+        if (abs(position) <= 0f) {
+            resetTransforms(page)
+            page.alpha = 1f
+            return
+        }
+        val applied = TransitionMath.apply(spec, position, arriving)
+        page.translationX = applied.moveX * page.width
+        page.translationY = applied.moveY * page.height
+        page.translationZ = 0f
+        page.scaleX = applied.scale
+        page.scaleY = applied.scale
+        page.rotation = applied.roll
+        page.rotationX = applied.pitch
+        page.rotationY = applied.yaw
+        page.pivotX = page.width / 2f
+        page.pivotY = page.height / 2f
+        page.alpha = applied.alpha
     }
 
     // Transformers only restore what they themselves mutate; call this on the
@@ -278,6 +337,71 @@ object PageTransformers {
         }
     }
 
+    private fun fade(page: View, position: Float) {
+        // The slide is cancelled, so the moving page fades in or out over the
+        // one in view rather than sliding across it.
+        page.translationX = -position * page.width
+        page.translationZ = 0f
+        page.alpha = 1f - abs(position)
+    }
+
+    private fun push(page: View, position: Float) {
+        page.pivotX = page.width / 2f
+        page.pivotY = page.height / 2f
+        if (position > 0f) {
+            // Incoming keeps the slide, whole and above the page it covers.
+            page.translationX = 0f
+            page.translationZ = 1f
+            page.alpha = 1f
+            page.scaleX = 1f
+            page.scaleY = 1f
+        } else {
+            // Outgoing gives way a fifth of a page, shrinks a little and
+            // dims hard, so the incoming clearly lands on top of it.
+            page.translationX = position * page.width * (PUSH_SHIFT - 1f)
+            page.translationZ = 0f
+            // Fade all the way out by the neighbour slot: the wrapper resets
+            // a page there, and a still-visible page snapped away. Its fade
+            // and the dim are the same curve now.
+            page.alpha = (1f + position).coerceIn(0f, 1f)
+            page.scaleX = 1f + position * PUSH_SHRINK
+            page.scaleY = page.scaleX
+        }
+    }
+
+    private fun parallax(page: View, position: Float) {
+        page.pivotX = page.width / 2f
+        page.pivotY = page.height / 2f
+        if (position > 0f) {
+            // Incoming lags the finger, still whole and on top.
+            page.translationX = position * page.width * PARALLAX_LAG
+            page.translationZ = 1f
+            page.alpha = 1f
+            page.scaleX = 1f
+            page.scaleY = 1f
+        } else {
+            // Outgoing trails at under half the finger's move and grows
+            // towards the viewer, with no dim: two planes at different rates,
+            // unlike the push, which shrinks and darkens it.
+            page.translationX = position * page.width * (PARALLAX_RATE - 1f)
+            page.translationZ = 0f
+            // Gone by the neighbour slot, for the same reason as Push.
+            page.alpha = (1f + position).coerceIn(0f, 1f)
+            page.scaleX = 1f - position * PARALLAX_GROW
+            page.scaleY = page.scaleX
+        }
+    }
+
+    private fun swing(page: View, position: Float) {
+        // Hangs from a pivot below the page, so it turns like a pendulum as
+        // it slides, at its furthest at the neighbour slot where it is
+        // already faded out.
+        page.pivotX = page.width / 2f
+        page.pivotY = page.height * SWING_PIVOT
+        page.rotation = SWING_ANGLE * position
+        page.alpha = 1f - abs(position)
+    }
+
     private const val MIN_SCALE = 0.72f
     private const val MIN_ALPHA = 0.35f
     private const val FLIP_CAMERA_DISTANCE = 12000f
@@ -292,4 +416,11 @@ object PageTransformers {
     private const val THROW_HOLD = 0.5f
     private const val THROW_LIFT = 0.7f
     private const val THROW_ROTATION = 20f
+    private const val PUSH_SHIFT = 0.2f
+    private const val PUSH_SHRINK = 0.06f
+    private const val PARALLAX_RATE = 0.45f
+    private const val PARALLAX_LAG = 0.15f
+    private const val PARALLAX_GROW = 0.05f
+    private const val SWING_ANGLE = 6f
+    private const val SWING_PIVOT = 1.25f
 }
