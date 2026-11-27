@@ -3526,12 +3526,13 @@ class LauncherActivity :
 
     // The configurable extra rows (popupItemsHome/popupItemsDrawer). HIDE is
     // added by the drawer menu itself so it keeps its historical position.
-    private fun addExtraRows(menu: SupernovaPopupMenu, extras: Set<PopupExtraRow>, app: LaunchableApp) {
-        if (PopupExtraRow.UNINSTALL in extras) {
-            menu.addRow(getString(R.string.uninstall), R.drawable.ic_menu_uninstall) {
-                startActivity(viewModel.appCatalog().uninstallIntent(app.packageName, app.userSerial))
-            }
+    private fun addUninstallRow(menu: SupernovaPopupMenu, packageName: String, userSerial: Long) {
+        menu.addRow(getString(R.string.uninstall), R.drawable.ic_menu_uninstall) {
+            startActivity(viewModel.appCatalog().uninstallIntent(packageName, userSerial))
         }
+    }
+
+    private fun addExtraRows(menu: SupernovaPopupMenu, extras: Set<PopupExtraRow>, app: LaunchableApp) {
         // Opens the app's market:// page, which any installed store can
         // take, so the row names no store.
         if (PopupExtraRow.PLAY_STORE in extras) {
@@ -3670,6 +3671,9 @@ class LauncherActivity :
         }
         menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
             viewModel.appCatalog().openAppInfo(app.packageName, app.className, app.userSerial)
+        }
+        if (PopupExtraRow.UNINSTALL in extras) {
+            addUninstallRow(menu, app.packageName, app.userSerial)
         }
         menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
             source?.dismiss()
@@ -3974,6 +3978,7 @@ class LauncherActivity :
                     menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
                         viewModel.appCatalog().openAppInfo(pkg, item.className, item.userSerial)
                     }
+                    if (item.itemType == ItemType.APP) addUninstallRow(menu, pkg, item.userSerial)
                 }
                 menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
                     showItemEditSheet(item, allowSwipe = !locked)
@@ -4553,6 +4558,7 @@ class LauncherActivity :
 
     // An app in a home folder: its home icon's rows, with Move to Home
     // among them. The folder's own order is changed by dragging.
+    @Suppress("CyclomaticComplexMethod")
     private fun folderMemberMenu(
         folder: LauncherItem,
         member: LauncherItem,
@@ -4594,6 +4600,7 @@ class LauncherActivity :
             menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
                 viewModel.appCatalog().openAppInfo(pkg, member.className, member.userSerial)
             }
+            if (member.itemType == ItemType.APP) addUninstallRow(menu, pkg, member.userSerial)
         }
         menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
             // The folder closes first: as a focusable window it
