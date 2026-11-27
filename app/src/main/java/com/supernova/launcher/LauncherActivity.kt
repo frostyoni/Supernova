@@ -3527,6 +3527,11 @@ class LauncherActivity :
     // The configurable extra rows (popupItemsHome/popupItemsDrawer). HIDE is
     // added by the drawer menu itself so it keeps its historical position.
     private fun addExtraRows(menu: SupernovaPopupMenu, extras: Set<PopupExtraRow>, app: LaunchableApp) {
+        if (PopupExtraRow.UNINSTALL in extras) {
+            menu.addRow(getString(R.string.uninstall), R.drawable.ic_menu_uninstall) {
+                startActivity(viewModel.appCatalog().uninstallIntent(app.packageName, app.userSerial))
+            }
+        }
         // Opens the app's market:// page, which any installed store can
         // take, so the row names no store.
         if (PopupExtraRow.PLAY_STORE in extras) {
@@ -3665,11 +3670,6 @@ class LauncherActivity :
         }
         menu.addRow(getString(R.string.app_info), R.drawable.ic_menu_info) {
             viewModel.appCatalog().openAppInfo(app.packageName, app.className, app.userSerial)
-        }
-        if (PopupExtraRow.UNINSTALL in extras) {
-            menu.addRow(getString(R.string.uninstall), R.drawable.ic_menu_uninstall) {
-                startActivity(viewModel.appCatalog().uninstallIntent(app.packageName, app.userSerial))
-            }
         }
         menu.addRow(getString(R.string.edit), R.drawable.ic_menu_edit) {
             source?.dismiss()
@@ -4633,7 +4633,7 @@ class LauncherActivity :
         member: LauncherItem,
         applied: (com.supernova.launcher.data.LauncherModel) -> Unit
     ) {
-        menu.addRow(getString(R.string.remove_from_folder), R.drawable.ic_menu_add) {
+        menu.addRow(getString(R.string.remove_from_folder), R.drawable.ic_action_home) {
             placeTapped(pageForFolderMembers(folder)) { spot ->
                 val before = viewModel.state.value.model
                 // The move a drag onto that free cell makes, so a folder

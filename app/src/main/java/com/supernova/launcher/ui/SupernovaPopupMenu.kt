@@ -48,16 +48,14 @@ object PopupRows {
 
     // HIDE only makes sense in the drawer (the workspace has Remove).
     val homeChoices = listOf(
-        PopupExtraRow.PLAY_STORE, PopupExtraRow.CLOSE_APP,
+        PopupExtraRow.UNINSTALL, PopupExtraRow.PLAY_STORE, PopupExtraRow.CLOSE_APP,
         PopupExtraRow.RELAUNCH, PopupExtraRow.SAVE_APK
     )
-    // UNINSTALL is drawer-only too: the workspace menu removes the item, it
-    // never uninstalls the app.
     val drawerChoices = listOf(PopupExtraRow.HIDE, PopupExtraRow.UNINSTALL) + homeChoices
 
     // Defaults reproduce the pre-phase-6 menus: the drawer had a Hide row,
     // the workspace menu had no extras.
-    val homeDefaults: Set<PopupExtraRow> = emptySet()
+    val homeDefaults: Set<PopupExtraRow> = setOf(PopupExtraRow.UNINSTALL)
     // Uninstall was an unconditional row before it became configurable, so it
     // has to be in the defaults for the menu to look unchanged.
     val drawerDefaults: Set<PopupExtraRow> = setOf(PopupExtraRow.HIDE, PopupExtraRow.UNINSTALL)
